@@ -1,0 +1,29 @@
+{
+  "folder_index": [
+    {
+      "file_name": "test_file",
+      "file_checksum_sha256": "11695bce680b259ad36a603fd8e6e3d3",
+      "file_relative_path": "test_file"
+    },
+    {
+      "file_name": "asdfasdfsaf",
+      "file_checksum_sha256": "dd405e439eecb3eb1fadc8f5c1c0d5bc",
+      "file_relative_path": "asdfasdfsaf"
+    },
+    {
+      "file_name": "metadata.json",
+      "file_checksum_sha256": "cd29a5600e1d6922e20062d303384a18",
+      "file_relative_path": "metadata.json"
+    },
+    {
+      "file_name": "index.json",
+      "file_checksum_sha256": "9f2206f6a234ac1cb64caa0204f8414a",
+      "file_relative_path": "index.json"
+    },
+    {
+      "file_name": "1.safetensors",
+      "file_checksum_sha256": "d41d8cd98f00b204e9800998ecf8427e",
+      "file_relative_path": "asdfasdf/1.safetensors"
+    }
+  ]
+}

@@ -7,6 +7,10 @@ from typing import Optional, List
 from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 
+from express.data import from_torrent, Torrent, get_torrent
+from express.file import generate_index, FolderIndex
+from rich.pretty import pprint
+
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 
 class Metadata(BaseModel):
@@ -27,15 +31,12 @@ class Metadata(BaseModel):
                 raise ValueError(f"Version '{v}' is not a valid SemVer 2.0.0 string.")
         return v
 
-    def get_digest(self) -> str:
-        return zlib.compress(self.model_dump_json().encode()).hex()
+    def get_torrent(self) -> Torrent:
+        return get_torrent(self)
 
     @staticmethod
-    def from_digest(digest: str) -> "Metadata":
-        compressed = bytes.fromhex(digest)
-        json_bytes = zlib.decompress(compressed)
-        json_str = json_bytes.decode()
-        return Metadata.model_validate_json(json_str)
+    def from_torrent(torrent: Torrent) -> "Metadata":
+        return from_torrent(torrent,Metadata)
 
 class Model:
     def __init__(self, path: Path):
@@ -45,8 +46,27 @@ class Model:
         """
         self.metadata_file_name = 'metadata.json'
         self.path = path
+        self.index_file_name = "index.json"
+        self.folder_index:FolderIndex = self.create_index_file() # 每次调用覆盖到最新的索引
 
         assert self.path.is_dir(), f"{self.path} must be directory."
+
+    def create_index_file(self) -> FolderIndex:
+        folder_index: FolderIndex = generate_index(self.path)
+        with (self.path / self.index_file_name).open('w',encoding='utf-8') as f:
+            json.dump(
+                folder_index.model_dump(exclude_none=False),
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
+            return folder_index
+
+    def is_index_file_exists(self):
+        return (self.path / self.index_file_name).exists()
+
+    def is_metadata_file_exists(self):
+        return (self.path / self.metadata_file_name).exists()
 
     def get_metadata(self) -> Metadata:
         """
@@ -71,7 +91,6 @@ class Model:
             tags=["example_tag"],
             name=name
         )
-        metadata.model_dump_json()
         with metadata_path.open("w", encoding="utf-8") as f:
             json.dump(
                 metadata.model_dump(exclude_none=False),
@@ -83,3 +102,10 @@ class Model:
     def remove_metadata(self):
         metadata_path = self.path / self.metadata_file_name
         metadata_path.unlink()
+
+def get_metadata(torrent: Torrent):
+    metadata:Metadata = from_torrent(torrent,Metadata)
+    pprint(metadata.model_dump(), expand_all=True)
+
+if __name__ == '__main__':
+    get_metadata("789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a50554a6a5a62694e89522d00e029268a")
