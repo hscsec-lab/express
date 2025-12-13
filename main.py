@@ -1,5 +1,8 @@
+from express.cli import app
+
+
 def main():
-    print("Hello from express!")
+    app()
 
 
 if __name__ == "__main__":
