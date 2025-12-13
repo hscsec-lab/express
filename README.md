@@ -55,3 +55,25 @@ $ express pull 789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a
 Downloading: model_name/index.json 338.0 B [295.0 B/s]
 ✓ Skip model_name/metadata.json: already exists
 ```
+
+## 存储模式
+
+```mermaid
+flowchart TD
+    A[模型目录] --> B[metadata.json]
+    B --> C[Express CLI]
+    C --> D[生成唯一 Torrent]
+    D --> E["存储介质 (e.g. S3)"]
+    
+    subgraph "存储层"
+        E --> F["唯一文件片 (chunked objects)"]
+        D -->|保存| G["Torrent Index (e.g. .torrent.json 或元数据锚点)"]
+        G --> F
+    end
+
+    style A fill:#e6f7ff,stroke:#1890ff
+    style D fill:#ffe58f,stroke:#faad14
+    style E fill:#f6ffed,stroke:#52c41a
+    style F fill:#f9f0ff,stroke:#722ed1
+    style G fill:#fff7e6,stroke:#fa8c16
+```
