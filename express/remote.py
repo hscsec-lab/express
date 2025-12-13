@@ -4,8 +4,10 @@ from pathlib import Path
 from typing import List, Optional
 
 import boto3
+from rich.text import Text
 from simple_file_checksum import get_checksum
 
+from express import console
 from express.data import Torrent, get_torrent, from_torrent
 from express.file import FolderIndex, FileMetadata
 from express.model import Model, Metadata
@@ -57,7 +59,7 @@ def push_file(
     local_file_path = model.path / file_metadata.file_relative_path
 
     if _remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name):
-        print(f"✓ Skip {remote_file_name}: already exists")
+        console.log(Text.assemble("✓ Skip ", (remote_file_name, "dim"), ": already exists"))
         return
 
     remote.s3_client.upload_file(
@@ -92,15 +94,16 @@ def pull_file(
 ) -> None:
     if local_file_path.exists():
         if file_checksum_sha256:
-            if get_checksum(local_file_path) == file_checksum_sha256:
-                print(f"\n✓ Skip {local_file_path}: already exists")
+            local_checksum = get_checksum(local_file_path)
+            if local_checksum == file_checksum_sha256:
+                console.log(Text.assemble("✓ Skip ", (str(local_file_path), "dim"), ": already exists"))
                 return
             else:
                 if force:
-                    print(f"⚠️  Overwriting {local_file_path}: checksum mismatch")
+                    console.log(Text.assemble("⚠️  Overwriting ", str(local_file_path), ": checksum mismatch"))
                 else:
-                    print(f"✗ Skip {local_file_path}: checksum mismatch (use --force to overwrite)")
-
+                    console.log(Text.assemble("✗ Skip ", str(local_file_path), ": checksum mismatch (use --force to overwrite)"))
+                    return
     local_file_path.parent.mkdir(parents=True, exist_ok=True)
     remote.s3_client.download_file(
         remote.s3_bucket,

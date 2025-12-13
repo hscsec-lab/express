@@ -4,12 +4,13 @@ import zlib
 from pathlib import Path
 from typing import Optional, List
 
+import rich
 from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 
 from express.data import from_torrent, Torrent, get_torrent
 from express.file import generate_index, FolderIndex
-from rich.pretty import pprint
+from rich.pretty import pprint, Pretty
 
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 
@@ -108,7 +109,7 @@ class Model:
 
 def get_metadata(torrent: Torrent):
     metadata:Metadata = from_torrent(torrent,Metadata)
-    pprint(metadata.model_dump(), expand_all=True)
+    rich.print(Pretty(metadata.model_dump(), expand_all=True, indent_guides=False))
 
 if __name__ == '__main__':
     get_metadata("789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a50554a6a5a62694e89522d00e029268a")
