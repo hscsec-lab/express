@@ -93,7 +93,8 @@ def pull_file(
     if local_file_path.exists():
         if file_checksum_sha256:
             if get_checksum(local_file_path) == file_checksum_sha256:
-                print(f"✓ Skip {local_file_path}: already exists")
+                print(f"\n✓ Skip {local_file_path}: already exists")
+                return
             else:
                 if force:
                     print(f"⚠️  Overwriting {local_file_path}: checksum mismatch")
@@ -129,17 +130,18 @@ def pull(torrent: Torrent, remote: Remote,force = False) -> Model:
     with local_index_file_path.open('r', encoding='utf-8') as f:
         folder_index: List[FileMetadata] = FolderIndex(**json.loads(f.read())).folder_index
         for file_metadata in folder_index:
-            pull_file(
-                remote,
-                Path(file_metadata.file_checksum_sha256),
-                model.path / file_metadata.file_relative_path,
-                file_checksum_sha256=file_metadata.file_checksum_sha256,
-                force=force
-            )
+            if model.index_file_name != file_metadata.file_name:
+                pull_file(
+                    remote,
+                    Path(file_metadata.file_checksum_sha256),
+                    model.path / file_metadata.file_relative_path,
+                    file_checksum_sha256=file_metadata.file_checksum_sha256,
+                    force=force
+                )
 
 
 if __name__ == '__main__':
     # push(model=Model(Path('../test_folder')),remote=Remote())
     pull(
-        "789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a50554a6a5a62694e89522d00e029268a",
+        "789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a5055625272728a522d0092a62592",
         Remote())
