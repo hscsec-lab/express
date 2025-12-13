@@ -12,15 +12,15 @@ app = typer.Typer(
     no_args_is_help=True
 )
 
-@app.command
+@app.command()
 def push(model_path: Path):
     model: Model = Model(path = model_path)
     remote.push(model,Remote())
 
-@app.command
-def pull(torrent: Torrent,force=False):
-    remote.pull(torrent,Remote(),force)
+@app.command()
+def pull(torrent: str,force=False):
+    remote.pull(Torrent(torrent),Remote(),force)
 
-@app.command
-def info(torrent: Torrent):
-    get_metadata(torrent)
+@app.command()
+def info(torrent: str):
+    get_metadata(Torrent(torrent))
