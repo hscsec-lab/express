@@ -110,6 +110,3 @@ class Model:
 def get_metadata(torrent: Torrent):
     metadata:Metadata = from_torrent(torrent,Metadata)
     rich.print(Pretty(metadata.model_dump(), expand_all=True, indent_guides=False))
-
-if __name__ == '__main__':
-    get_metadata("789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a50554a6a5a62694e89522d00e029268a")
