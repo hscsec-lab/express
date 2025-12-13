@@ -124,7 +124,7 @@ def pull(torrent: Torrent, remote: Remote,force = False) -> Model:
         local_model_path.mkdir()
     model = Model(path=local_model_path)
     local_index_file_path = model.path / model.index_file_name
-    remote_index_path = f"{torrent}.{model.index_file_name}"
+    remote_index_path g= f"{torrent}.{model.index_file_name}"
     assert _remote_file_exists(remote.s3_client, remote.s3_bucket, remote_index_path), "Remote index is not exist."
     pull_file(remote, Path(remote_index_path), local_index_file_path,file_checksum_sha256=None)  # 从远端覆写index
     with local_index_file_path.open('r', encoding='utf-8') as f:
