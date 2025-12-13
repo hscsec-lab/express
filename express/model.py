@@ -8,6 +8,7 @@ import rich
 from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 
+from express import console
 from express.data import from_torrent, Torrent, get_torrent
 from express.file import generate_index, FolderIndex
 from rich.pretty import pprint, Pretty
@@ -46,7 +47,7 @@ class Model:
         :param path: 模型文件夹路径
         """
         if not path.exists():
-            print(f"Created model {path}")
+            console.print(f"Created model {path}")
             path.mkdir()
         self.metadata_file_name = 'metadata.json'
         self.path = path

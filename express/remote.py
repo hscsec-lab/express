@@ -36,8 +36,7 @@ class Remote:
             endpoint_url=self.s3_endpoint
         )
 
-
-def _remote_file_exists(s3_client, bucket: str, key: str) -> bool:
+def is_remote_file_exists(s3_client, bucket: str, key: str) -> bool:
     try:
         s3_client.head_object(Bucket=bucket, Key=key)
         return True
@@ -45,7 +44,6 @@ def _remote_file_exists(s3_client, bucket: str, key: str) -> bool:
         if e.response['Error']['Code'] == '404':
             return False
         raise
-
 
 def push_file(
         model: Model,
@@ -58,8 +56,8 @@ def push_file(
         remote_file_name = f"{model_metadata_torrent}.{model.index_file_name}"
     local_file_path = model.path / file_metadata.file_relative_path
 
-    if _remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name):
-        console.log(Text.assemble("✓ Skip ", (remote_file_name, "dim"), ": already exists"))
+    if is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name):
+        console.print(Text.assemble("✓ Skip ", (remote_file_name, "dim"), ": already exists"))
         return
 
     remote.s3_client.upload_file(
@@ -67,6 +65,33 @@ def push_file(
         remote.s3_bucket,
         remote_file_name,
         Callback=ProgressPercentage(str(local_file_path))
+    )
+
+def pull_file(
+        remote: Remote,
+        remote_file_path: Path,
+        local_file_path: Path,
+        file_checksum_sha256: str | None,
+        force = False
+) -> None:
+    if local_file_path.exists():
+        if file_checksum_sha256:
+            local_checksum = get_checksum(local_file_path)
+            if local_checksum == file_checksum_sha256:
+                console.print(Text.assemble("✓ Skip ", (str(local_file_path), "dim"), ": already exists"))
+                return
+            else:
+                if force:
+                    console.print(Text.assemble("⚠️  Overwriting ", str(local_file_path), ": checksum mismatch"))
+                else:
+                    console.print(Text.assemble("✗ Skip ", str(local_file_path), ": checksum mismatch (use --force to overwrite)"))
+                    return
+    local_file_path.parent.mkdir(parents=True, exist_ok=True)
+    remote.s3_client.download_file(
+        remote.s3_bucket,
+        str(remote_file_path),
+        local_file_path,
+        Callback=DownloadProgressSimple(str(local_file_path))
     )
 
 
@@ -84,35 +109,6 @@ def push(model: Model, remote: Remote):
         push_file(model, remote, file_metadata, model_metadata_torrent)
     print(f"推送完成，请妥善保存模型torrent: {model_metadata_torrent}")
 
-
-def pull_file(
-        remote: Remote,
-        remote_file_path: Path,
-        local_file_path: Path,
-        file_checksum_sha256: str | None,
-        force = False
-) -> None:
-    if local_file_path.exists():
-        if file_checksum_sha256:
-            local_checksum = get_checksum(local_file_path)
-            if local_checksum == file_checksum_sha256:
-                console.log(Text.assemble("✓ Skip ", (str(local_file_path), "dim"), ": already exists"))
-                return
-            else:
-                if force:
-                    console.log(Text.assemble("⚠️  Overwriting ", str(local_file_path), ": checksum mismatch"))
-                else:
-                    console.log(Text.assemble("✗ Skip ", str(local_file_path), ": checksum mismatch (use --force to overwrite)"))
-                    return
-    local_file_path.parent.mkdir(parents=True, exist_ok=True)
-    remote.s3_client.download_file(
-        remote.s3_bucket,
-        str(remote_file_path),
-        local_file_path,
-        Callback=DownloadProgressSimple(str(local_file_path))
-    )
-
-
 def pull(torrent: Torrent, remote: Remote,force = False) -> Model:
     """
     从远端拉取模型
@@ -128,7 +124,7 @@ def pull(torrent: Torrent, remote: Remote,force = False) -> Model:
     model = Model(path=local_model_path)
     local_index_file_path = model.path / model.index_file_name
     remote_index_path = f"{torrent}.{model.index_file_name}"
-    assert _remote_file_exists(remote.s3_client, remote.s3_bucket, remote_index_path), "Remote index is not exist."
+    assert is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_index_path), "Remote index is not exist."
     pull_file(remote, Path(remote_index_path), local_index_file_path,file_checksum_sha256=None)  # 从远端覆写index
     with local_index_file_path.open('r', encoding='utf-8') as f:
         folder_index: List[FileMetadata] = FolderIndex(**json.loads(f.read())).folder_index
@@ -141,10 +137,4 @@ def pull(torrent: Torrent, remote: Remote,force = False) -> Model:
                     file_checksum_sha256=file_metadata.file_checksum_sha256,
                     force=force
                 )
-
-
-if __name__ == '__main__':
-    # push(model=Model(Path('../test_folder')),remote=Remote())
-    pull(
-        "789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a5055625272728a522d0092a62592",
-        Remote())
+    return model
