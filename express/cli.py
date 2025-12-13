@@ -24,3 +24,8 @@ def pull(torrent: str,force=False):
 @app.command()
 def info(torrent: str):
     get_metadata(Torrent(torrent))
+
+@app.command()
+def create(model_name: str):
+    model = Model(Path(model_name))
+    model.create_metadata(model_name)

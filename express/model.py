@@ -44,6 +44,9 @@ class Model:
         Init
         :param path: 模型文件夹路径
         """
+        if not path.exists():
+            print(f"Created model {path}")
+            path.mkdir()
         self.metadata_file_name = 'metadata.json'
         self.path = path
         self.index_file_name = "index.json"

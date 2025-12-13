@@ -1,0 +1,11 @@
+include:
+  - project: 'kxb/ci_template'
+    ref: 'main'
+    file: 'pypi/pypi.yml'
+
+stages:
+  - build
+
+variables:
+  PYTHON_IMAGE: python:3.12
+  CI_RUNNER_TAGS: test-k8s
