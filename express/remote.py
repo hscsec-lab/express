@@ -8,7 +8,7 @@ from rich.text import Text
 from simple_file_checksum import get_checksum
 
 from express import console
-from express.data import Torrent, get_torrent, from_torrent
+from express.data import Torrent, get_torrent, from_torrent, search_exact
 from express.file import FolderIndex, FileMetadata
 from express.model import Model, Metadata, get_metadata
 from express.s3 import ProgressPercentage, DownloadProgressSimple
@@ -99,6 +99,7 @@ def pull_file(
     )
 
 
+
 def search_extension(remote: Remote, extension: str) -> List[str]:
     """
 
@@ -117,6 +118,13 @@ def search_extension(remote: Remote, extension: str) -> List[str]:
 
     return found_files
 
+def _list(remote: Remote) -> List[Metadata]:
+    file_list = search_extension(remote, 'index.json')
+    metadatas: List[Metadata] = []
+    for file_name in file_list:
+        torrent = Torrent(file_name.strip('.index.json'))
+        metadatas.append(get_metadata(torrent))
+    return metadatas
 
 def push(model: Model, remote: Remote):
     """
@@ -131,7 +139,6 @@ def push(model: Model, remote: Remote):
     for file_metadata in folder_index:
         push_file(model, remote, file_metadata, model_metadata_torrent)
     print(f"推送完成，请妥善保存模型torrent: {model_metadata_torrent}")
-
 
 def pull(torrent: Torrent, remote: Remote, force=False) -> Model:
     """
@@ -163,15 +170,12 @@ def pull(torrent: Torrent, remote: Remote, force=False) -> Model:
                 )
     return model
 
+def ls(remote: Remote):
+    console.print(_list(remote))
 
-def ls(remote: Remote) -> List[Metadata]:
-    file_list = search_extension(remote, 'index.json')
-    metadatas: List[Metadata] = []
-    for file_name in file_list:
-        torrent = Torrent(file_name.strip('.index.json'))
-        metadatas.append(get_metadata(torrent))
-    console.print(metadatas)
-    return metadatas
+def search(remote: Remote,field: str,value: str):
+    metadata_list = search_exact(_list(remote),field,value)
+    console.print(metadata_list)
 
 if __name__ == '__main__':
     ls(Remote())

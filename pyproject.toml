@@ -14,5 +14,10 @@ dependencies = [
     "tqdm>=4.67.1",
     "typer>=0.20.0",
 ]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["express"]
+
+
 [project.scripts]
 express="express.cli:app"

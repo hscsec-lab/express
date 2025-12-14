@@ -1,5 +1,5 @@
 import zlib
-from typing import TypeVar, Type
+from typing import TypeVar, Type, List
 
 from pydantic import BaseModel
 
@@ -14,7 +14,6 @@ def assert_serializable(obj: BaseModel) -> bool:
         return True
     except (TypeError, ValueError) as e:
         raise AssertionError(f"Object is not JSON-serializable: {e}")
-
 def get_torrent(obj: BaseModel) -> Torrent:
     """
     从obj 序列化出可逆的torrent
@@ -33,3 +32,22 @@ def from_torrent(torrent: Torrent, expect_type: Type[T]) -> T:
     json_bytes = zlib.decompress(compressed)
     json_str = json_bytes.decode()
     return expect_type.model_validate_json(json_str)
+def search_exact(
+        items: List[T],
+        field: str,
+        value,
+        case_sensitive: bool = True
+) -> List[T]:
+    """
+    精准搜索Pydantic 类型obj
+    :param items:
+    :param field:
+    :param value:
+    :param case_sensitive:
+    :return:
+    """
+    def eq(a, b):
+        if isinstance(a, str) and not case_sensitive:
+            a, b = a.lower(), str(b).lower()
+        return a == b
+    return [item for item in items if eq(getattr(item, field), value)]

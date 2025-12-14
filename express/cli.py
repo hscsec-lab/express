@@ -33,3 +33,7 @@ def create(model_name: str):
 @app.command()
 def ls():
     remote.ls(remote=Remote())
+
+@app.command()
+def search(field: str,value: str):
+    remote.search(remote=Remote(),field=field,value=value)
