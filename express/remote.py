@@ -10,7 +10,7 @@ from simple_file_checksum import get_checksum
 from express import console
 from express.data import Torrent, get_torrent, from_torrent
 from express.file import FolderIndex, FileMetadata
-from express.model import Model, Metadata
+from express.model import Model, Metadata, get_metadata
 from express.s3 import ProgressPercentage, DownloadProgressSimple
 
 
@@ -36,6 +36,7 @@ class Remote:
             endpoint_url=self.s3_endpoint
         )
 
+
 def is_remote_file_exists(s3_client, bucket: str, key: str) -> bool:
     try:
         s3_client.head_object(Bucket=bucket, Key=key)
@@ -44,6 +45,7 @@ def is_remote_file_exists(s3_client, bucket: str, key: str) -> bool:
         if e.response['Error']['Code'] == '404':
             return False
         raise
+
 
 def push_file(
         model: Model,
@@ -67,12 +69,13 @@ def push_file(
         Callback=ProgressPercentage(str(local_file_path))
     )
 
+
 def pull_file(
         remote: Remote,
         remote_file_path: Path,
         local_file_path: Path,
         file_checksum_sha256: str | None,
-        force = False
+        force=False
 ) -> None:
     if local_file_path.exists():
         if file_checksum_sha256:
@@ -84,7 +87,8 @@ def pull_file(
                 if force:
                     console.print(Text.assemble("⚠️  Overwriting ", str(local_file_path), ": checksum mismatch"))
                 else:
-                    console.print(Text.assemble("✗ Skip ", str(local_file_path), ": checksum mismatch (use --force to overwrite)"))
+                    console.print(Text.assemble("✗ Skip ", str(local_file_path),
+                                                ": checksum mismatch (use --force to overwrite)"))
                     return
     local_file_path.parent.mkdir(parents=True, exist_ok=True)
     remote.s3_client.download_file(
@@ -93,6 +97,25 @@ def pull_file(
         local_file_path,
         Callback=DownloadProgressSimple(str(local_file_path))
     )
+
+
+def search_extension(remote: Remote, extension: str) -> List[str]:
+    """
+
+    :param remote:
+    :param extension:
+    :return:
+    """
+    paginator = remote.s3_client.get_paginator('list_objects_v2')
+    page_iterator = paginator.paginate(Bucket=remote.s3_bucket)
+    objects = page_iterator.search(f"Contents[?ends_with(Key, `{extension}`)][].Key")
+
+    found_files = []
+    for item in objects:
+        if item: # S3中如果空桶会返回[None]而并非[]
+            found_files.append(item)
+
+    return found_files
 
 
 def push(model: Model, remote: Remote):
@@ -109,7 +132,8 @@ def push(model: Model, remote: Remote):
         push_file(model, remote, file_metadata, model_metadata_torrent)
     print(f"推送完成，请妥善保存模型torrent: {model_metadata_torrent}")
 
-def pull(torrent: Torrent, remote: Remote,force = False) -> Model:
+
+def pull(torrent: Torrent, remote: Remote, force=False) -> Model:
     """
     从远端拉取模型
     :param torrent:
@@ -125,7 +149,7 @@ def pull(torrent: Torrent, remote: Remote,force = False) -> Model:
     local_index_file_path = model.path / model.index_file_name
     remote_index_path = f"{torrent}.{model.index_file_name}"
     assert is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_index_path), "Remote index is not exist."
-    pull_file(remote, Path(remote_index_path), local_index_file_path,file_checksum_sha256=None)  # 从远端覆写index
+    pull_file(remote, Path(remote_index_path), local_index_file_path, file_checksum_sha256=None)  # 从远端覆写index
     with local_index_file_path.open('r', encoding='utf-8') as f:
         folder_index: List[FileMetadata] = FolderIndex(**json.loads(f.read())).folder_index
         for file_metadata in folder_index:
@@ -138,3 +162,16 @@ def pull(torrent: Torrent, remote: Remote,force = False) -> Model:
                     force=force
                 )
     return model
+
+
+def ls(remote: Remote) -> List[Metadata]:
+    file_list = search_extension(remote, 'index.json')
+    metadatas: List[Metadata] = []
+    for file_name in file_list:
+        torrent = Torrent(file_name.strip('.index.json'))
+        metadatas.append(get_metadata(torrent))
+    console.print(metadatas)
+    return metadatas
+
+if __name__ == '__main__':
+    ls(Remote())

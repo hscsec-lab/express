@@ -4,7 +4,7 @@ import typer
 
 from express import remote
 from express.data import Torrent
-from express.model import Model, get_metadata
+from express.model import Model, get_metadata, _info
 from express.remote import Remote
 
 app = typer.Typer(
@@ -23,9 +23,13 @@ def pull(torrent: str,force=False):
 
 @app.command()
 def info(torrent: str):
-    get_metadata(Torrent(torrent))
+    _info(Torrent(torrent))
 
 @app.command()
 def create(model_name: str):
     model = Model(Path(model_name))
     model.create_metadata(model_name)
+
+@app.command()
+def ls():
+    remote.ls(remote=Remote())

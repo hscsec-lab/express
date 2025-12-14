@@ -108,6 +108,9 @@ class Model:
         metadata_path = self.path / self.metadata_file_name
         metadata_path.unlink()
 
-def get_metadata(torrent: Torrent):
-    metadata:Metadata = from_torrent(torrent,Metadata)
-    rich.print(Pretty(metadata.model_dump(), expand_all=True, indent_guides=False))
+def get_metadata(torrent: Torrent) -> Metadata:
+    metadata: Metadata = from_torrent(torrent,Metadata)
+    return metadata
+
+def _info(torrent: Torrent):
+    rich.print(Pretty(get_metadata(torrent).model_dump(), expand_all=True, indent_guides=False))
