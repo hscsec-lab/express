@@ -2,6 +2,9 @@ include:
   - project: 'kxb/ci_template'
     ref: 'main'
     file: 'pypi/pypi.yml'
+  - project: 'kxb/ci_template'
+    ref: 'main'
+    file: 'docker/docker.yml'
 
 stages:
   - build
@@ -9,3 +12,10 @@ stages:
 variables:
   PYTHON_IMAGE: python:3.12
   CI_RUNNER_TAGS: test-k8s
+  REGISTRY_PROJECT_PATH: "gitlab/$CI_PROJECT_NAME"
+  FINAL_IMAGE_NAME: ${CI_PROJECT_NAME}
+  REGISTRY: $Docker_CI_REGISTRY
+  REGISTRY_USER: $Docker_CI_REGISTRY_USER
+  REGISTRY_PASSWORD: $Docker_CI_REGISTRY_PASSWORD
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  CACHE_REPO: "$Docker_CI_REGISTRY/$REGISTRY_PROJECT_PATH/cache"
