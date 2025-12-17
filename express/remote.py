@@ -1,7 +1,10 @@
 import json
 import os
+import tempfile
+from contextlib import contextmanager
+from io import BufferedReader
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, BinaryIO, Any, Generator
 
 import boto3
 from rich.text import Text
@@ -10,9 +13,10 @@ from simple_file_checksum import get_checksum
 from express import console
 from express.data import Torrent, get_torrent, from_torrent, search_exact
 from express.file import FolderIndex, FileMetadata
-from express.model import Model, Metadata, get_metadata
+from express.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
 from express.s3 import ProgressPercentage, DownloadProgressSimple
 
+LOCAL_WORKDIR = Path(os.getenv('LOCAL_WORKDIR','/models'))
 
 class Remote:
     def __init__(self):
@@ -35,7 +39,6 @@ class Remote:
             aws_secret_access_key=self.s3_sk,
             endpoint_url=self.s3_endpoint
         )
-
 
 def is_remote_file_exists(s3_client, bucket: str, key: str) -> bool:
     try:
@@ -69,37 +72,52 @@ def push_file(
         Callback=ProgressPercentage(str(local_file_path))
     )
 
-
 def pull_file(
         remote: Remote,
         remote_file_path: Path,
         local_file_path: Path,
         file_checksum_sha256: str | None,
         force=False
-) -> None:
+) -> Path:
     if local_file_path.exists():
         if file_checksum_sha256:
             local_checksum = get_checksum(local_file_path)
             if local_checksum == file_checksum_sha256:
                 console.print(Text.assemble("✓ Skip ", (str(local_file_path), "dim"), ": already exists"))
-                return
+                return local_file_path
             else:
                 if force:
                     console.print(Text.assemble("⚠️  Overwriting ", str(local_file_path), ": checksum mismatch"))
                 else:
                     console.print(Text.assemble("✗ Skip ", str(local_file_path),
                                                 ": checksum mismatch (use --force to overwrite)"))
-                    return
+                    return local_file_path
     local_file_path.parent.mkdir(parents=True, exist_ok=True)
     remote.s3_client.download_file(
         remote.s3_bucket,
         str(remote_file_path),
         local_file_path,
-        Callback=DownloadProgressSimple(str(local_file_path))
+        Callback=DownloadProgressSimple(str(local_file_path.name))
     )
+    return local_file_path
 
-
-
+@contextmanager
+def open_remote_file(
+        remote: Remote,
+        remote_file_path: Path,
+        local_file_path: Path,
+        file_checksum_sha256: str | None,
+        force=False
+) -> Generator[BufferedReader, Any, None]:
+    pull_file(remote,remote_file_path,local_file_path,file_checksum_sha256,force)
+    f = None
+    try:
+        f = local_file_path.open("rb")  # 或 "r"，按需
+        yield f
+    finally:
+        if f:
+            f.close()
+        local_file_path.unlink(missing_ok=True)
 def search_extension(remote: Remote, extension: str) -> List[str]:
     """
 
@@ -113,18 +131,20 @@ def search_extension(remote: Remote, extension: str) -> List[str]:
 
     found_files = []
     for item in objects:
-        if item: # S3中如果空桶会返回[None]而并非[]
+        if item:  # S3中如果空桶会返回[None]而并非[]
             found_files.append(item)
 
     return found_files
 
+
 def _list(remote: Remote) -> List[Metadata]:
-    file_list = search_extension(remote, 'index.json')
+    file_list = search_extension(remote, MODEL_INDEX_FILE_NAME)
     metadatas: List[Metadata] = []
     for file_name in file_list:
-        torrent = Torrent(file_name.strip('.index.json'))
+        torrent = Torrent(file_name.strip(f'.{MODEL_INDEX_FILE_NAME}'))
         metadatas.append(get_metadata(torrent))
     return metadatas
+
 
 def push(model: Model, remote: Remote):
     """
@@ -140,6 +160,40 @@ def push(model: Model, remote: Remote):
         push_file(model, remote, file_metadata, model_metadata_torrent)
     print(f"推送完成，请妥善保存模型torrent: {model_metadata_torrent}")
 
+
+def pull_model_with_index(index: dict, remote: Remote, save_path: Path, force: bool) -> Model:
+    folder_index: List[FileMetadata] = FolderIndex(**index).folder_index
+    for file_metadata in folder_index:
+        if MODEL_INDEX_FILE_NAME != file_metadata.file_name:
+            download_path = save_path / file_metadata.file_relative_path
+            pull_file(
+                remote,
+                Path(file_metadata.file_checksum_sha256),
+                download_path,
+                file_checksum_sha256=file_metadata.file_checksum_sha256,
+                force=force
+            )
+
+    return Model(path=save_path)
+
+
+def pull_index_with_torrent(torrent: Torrent, remote: Remote) -> dict:
+    """
+    下载index并返回index的内容
+    :param torrent:
+    :param remote:
+    :return:
+    """
+    remote_index_path = f"{torrent}.{MODEL_INDEX_FILE_NAME}"
+    assert is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_index_path), "Remote index is not exist."
+    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as tmp:
+        with open_remote_file(remote, Path(remote_index_path), Path(tmp.name), file_checksum_sha256=None) as pulled_file:
+            return json.loads(pulled_file.read())
+
+def pull_model(torrent: Torrent,remote: Remote,model: Model,force: bool) -> Model:
+    index = pull_index_with_torrent(torrent,remote)
+    return pull_model_with_index(index,remote,save_path=model.path,force=force)
+
 def pull(torrent: Torrent, remote: Remote, force=False) -> Model:
     """
     从远端拉取模型
@@ -149,33 +203,24 @@ def pull(torrent: Torrent, remote: Remote, force=False) -> Model:
     :return:
     """
     metadata: Metadata = from_torrent(torrent, Metadata)
-    local_model_path = Path(metadata.name)
+    model_name = metadata.name
+    local_model_path = LOCAL_WORKDIR / model_name
     if not local_model_path.exists():
-        local_model_path.mkdir()
-    model = Model(path=local_model_path)
-    local_index_file_path = model.path / model.index_file_name
-    remote_index_path = f"{torrent}.{model.index_file_name}"
-    assert is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_index_path), "Remote index is not exist."
-    pull_file(remote, Path(remote_index_path), local_index_file_path, file_checksum_sha256=None)  # 从远端覆写index
-    with local_index_file_path.open('r', encoding='utf-8') as f:
-        folder_index: List[FileMetadata] = FolderIndex(**json.loads(f.read())).folder_index
-        for file_metadata in folder_index:
-            if model.index_file_name != file_metadata.file_name:
-                pull_file(
-                    remote,
-                    Path(file_metadata.file_checksum_sha256),
-                    model.path / file_metadata.file_relative_path,
-                    file_checksum_sha256=file_metadata.file_checksum_sha256,
-                    force=force
-                )
-    return model
+        local_model_path.mkdir(parents=True, exist_ok=True)
+    model = Model(path=local_model_path) # 初始化一个空的模型
+    return pull_model(torrent,remote,model,force)
+
 
 def ls(remote: Remote):
     console.print(_list(remote))
 
-def search(remote: Remote,field: str,value: str):
-    metadata_list = search_exact(_list(remote),field,value)
+def search(remote: Remote, field: str, value: str):
+    metadata_list = search_exact(_list(remote), field, value)
     console.print(metadata_list)
 
+
 if __name__ == '__main__':
-    ls(Remote())
+    pull(
+        torrent=Torrent("789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2ac884d49c9c7ca55a00935b25b9"),
+        remote=Remote()
+    )
