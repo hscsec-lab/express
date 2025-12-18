@@ -114,5 +114,11 @@ def get_metadata(torrent: Torrent) -> Metadata:
     metadata: Metadata = from_torrent(torrent,Metadata)
     return metadata
 
-def _info(torrent: Torrent):
-    rich.print(Pretty(get_metadata(torrent).model_dump(), expand_all=True, indent_guides=False))
+def _info(torrent: Torrent, fields: Optional[List[str]] = None):
+    data = get_metadata(torrent).model_dump()
+    if fields:
+        data = {k: v for k, v in data.items() if k in fields}
+        if len(data) == 1:
+            rich.print(next(iter(data.values())))
+            return
+    rich.print(Pretty(data, expand_all=True, indent_guides=False))
