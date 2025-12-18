@@ -21,9 +21,9 @@ def push(model_path: Path):
 def pull(torrent: str,force=False):
     remote.pull(Torrent(torrent),Remote(),force)
 
-@app.command()
-def info(torrent: str):
-    _info(Torrent(torrent))
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def info(torrent: str, ctx: typer.Context):
+    _info(Torrent(torrent), fields=[arg[2:] for arg in ctx.args if arg.startswith('--')])
 
 @app.command()
 def create(model_name: str):
@@ -31,8 +31,8 @@ def create(model_name: str):
     model.create_metadata(model_name)
 
 @app.command()
-def ls():
-    remote.ls(remote=Remote())
+def ls(torrent: bool = False):
+    remote.ls(remote=Remote(),torrent=torrent)
 
 @app.command()
 def search(field: str,value: str):

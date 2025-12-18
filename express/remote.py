@@ -137,12 +137,16 @@ def search_extension(remote: Remote, extension: str) -> List[str]:
     return found_files
 
 
-def _list(remote: Remote) -> List[Metadata]:
+def _list(remote: Remote,torrent: bool = False) -> List[Metadata] | List[Torrent]:
     file_list = search_extension(remote, MODEL_INDEX_FILE_NAME)
     metadatas: List[Metadata] = []
+    torrents: List[Torrent] = []
     for file_name in file_list:
-        torrent = Torrent(file_name.strip(f'.{MODEL_INDEX_FILE_NAME}'))
-        metadatas.append(get_metadata(torrent))
+        _torrent = Torrent(file_name.strip(f'.{MODEL_INDEX_FILE_NAME}'))
+        torrents.append(_torrent)
+        metadatas.append(get_metadata(_torrent))
+    if torrent:
+        return torrents
     return metadatas
 
 
@@ -211,8 +215,8 @@ def pull(torrent: Torrent, remote: Remote, force=False) -> Model:
     return pull_model(torrent,remote,model,force)
 
 
-def ls(remote: Remote):
-    console.print(_list(remote))
+def ls(remote: Remote,torrent: bool = False):
+    console.print(_list(remote,torrent))
 
 def search(remote: Remote, field: str, value: str):
     metadata_list = search_exact(_list(remote), field, value)
