@@ -117,7 +117,6 @@ def open_remote_file(
     finally:
         if f:
             f.close()
-        local_file_path.unlink(missing_ok=True)
 def search_extension(remote: Remote, extension: str) -> List[str]:
     """
 
@@ -142,7 +141,7 @@ def _list(remote: Remote,torrent: bool = False) -> List[Metadata] | List[Torrent
     metadatas: List[Metadata] = []
     torrents: List[Torrent] = []
     for file_name in file_list:
-        _torrent = Torrent(file_name.strip(f'.{MODEL_INDEX_FILE_NAME}'))
+        _torrent = Torrent(file_name.split(f'.{MODEL_INDEX_FILE_NAME}')[0])
         torrents.append(_torrent)
         metadatas.append(get_metadata(_torrent))
     if torrent:
@@ -224,7 +223,4 @@ def search(remote: Remote, field: str, value: str):
 
 
 if __name__ == '__main__':
-    pull(
-        torrent=Torrent("789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2ac884d49c9c7ca55a00935b25b9"),
-        remote=Remote()
-    )
+    ls(remote=Remote())

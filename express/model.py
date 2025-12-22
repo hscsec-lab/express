@@ -59,6 +59,7 @@ class Model:
         assert self.path.is_dir(), f"{self.path} must be directory."
 
     def create_index_file(self) -> FolderIndex:
+        console.print("Creating index")
         folder_index: FolderIndex = generate_index(self.path)
         with (self.path / self.index_file_name).open('w',encoding='utf-8') as f:
             json.dump(
