@@ -117,7 +117,6 @@ def open_remote_file(
     finally:
         if f:
             f.close()
-        local_file_path.unlink(missing_ok=True)
 def search_extension(remote: Remote, extension: str) -> List[str]:
     """
 
