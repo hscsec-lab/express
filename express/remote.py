@@ -215,7 +215,7 @@ def pull(torrent: Torrent, remote: Remote, force=False) -> Model:
 
 
 def ls(remote: Remote,torrent: bool = False):
-    console.print(_list(remote,torrent))
+    console.print(_list(remote,torrent),overflow="ignore")
 
 def search(remote: Remote, field: str, value: str):
     metadata_list = search_exact(_list(remote), field, value)
