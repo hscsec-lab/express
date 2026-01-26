@@ -56,12 +56,11 @@ class Model:
         self.metadata_file_name = 'metadata.json'
         self.path = path
         self.index_file_name = MODEL_INDEX_FILE_NAME
-        self.folder_index: FolderIndex = self.create_index_file()  # 每次调用覆盖到最新的索引
+        self.folder_index: FolderIndex = self.write_index_file()  # 每次调用覆盖到最新的索引
 
         assert self.path.is_dir(), f"{self.path} must be directory."
 
-    def create_index_file(self) -> FolderIndex:
-        console.print("Creating index")
+    def write_index_file(self) -> FolderIndex:
         folder_index: FolderIndex = generate_index(self.path)
         with (self.path / self.index_file_name).open('w', encoding='utf-8') as f:
             json.dump(
@@ -74,6 +73,11 @@ class Model:
 
     def is_index_file_exists(self):
         return (self.path / self.index_file_name).exists()
+
+    def remove_index_file(self):
+        index_path = self.path / self.index_file_name
+        if index_path.exists():
+            index_path.unlink()
 
     def is_metadata_file_exists(self):
         return (self.path / self.metadata_file_name).exists()
@@ -93,8 +97,6 @@ class Model:
         创建模型的metadata
         :return:
         """
-        if tags is None:
-            tags = ["example_tag"]
         metadata_path = self.path / self.metadata_file_name
         metadata = Metadata(
             authors=authors,
@@ -113,7 +115,9 @@ class Model:
 
     def remove_metadata(self):
         metadata_path = self.path / self.metadata_file_name
-        metadata_path.unlink()
+        if metadata_path.exists():
+            metadata_path.unlink()
+
 
 
 def get_metadata(torrent: Torrent) -> Metadata:

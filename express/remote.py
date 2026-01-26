@@ -4,7 +4,7 @@ import tempfile
 from contextlib import contextmanager
 from io import BufferedReader
 from pathlib import Path
-from typing import List, Optional, BinaryIO, Any, Generator
+from typing import List, Any, Generator
 
 import boto3
 from rich.text import Text

@@ -12,3 +12,5 @@ test_folder
 .idea
 express/test_file
 tmp
+*.flamegraph
+*.ss
