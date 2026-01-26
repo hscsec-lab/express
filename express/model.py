@@ -15,7 +15,8 @@ from express.file import generate_index, FolderIndex
 from rich.pretty import pprint, Pretty
 
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
-MODEL_INDEX_FILE_NAME = os.getenv("MODEL_INDEX_FILE_NAME",'express-index.json')
+MODEL_INDEX_FILE_NAME = os.getenv("MODEL_INDEX_FILE_NAME", 'express-index.json')
+
 
 class Metadata(BaseModel):
     authors: Optional[str] = None
@@ -40,7 +41,8 @@ class Metadata(BaseModel):
 
     @staticmethod
     def from_torrent(torrent: Torrent) -> "Metadata":
-        return from_torrent(torrent,Metadata)
+        return from_torrent(torrent, Metadata)
+
 
 class Model:
     def __init__(self, path: Path):
@@ -54,14 +56,13 @@ class Model:
         self.metadata_file_name = 'metadata.json'
         self.path = path
         self.index_file_name = MODEL_INDEX_FILE_NAME
-        self.folder_index: FolderIndex = self.create_index_file() # 每次调用覆盖到最新的索引
+        self.folder_index: FolderIndex = self.write_index_file()  # 每次调用覆盖到最新的索引
 
         assert self.path.is_dir(), f"{self.path} must be directory."
 
-    def create_index_file(self) -> FolderIndex:
-        console.print("Creating index")
+    def write_index_file(self) -> FolderIndex:
         folder_index: FolderIndex = generate_index(self.path)
-        with (self.path / self.index_file_name).open('w',encoding='utf-8') as f:
+        with (self.path / self.index_file_name).open('w', encoding='utf-8') as f:
             json.dump(
                 folder_index.model_dump(exclude_none=False),
                 f,
@@ -72,6 +73,11 @@ class Model:
 
     def is_index_file_exists(self):
         return (self.path / self.index_file_name).exists()
+
+    def remove_index_file(self):
+        index_path = self.path / self.index_file_name
+        if index_path.exists():
+            index_path.unlink()
 
     def is_metadata_file_exists(self):
         return (self.path / self.metadata_file_name).exists()
@@ -86,17 +92,17 @@ class Model:
             data = json.load(f)
             return Metadata(**data)
 
-    def create_metadata(self, name="default"):
+    def create_metadata(self, authors="bob", emails="human@human.com", version="0.1.0", tags=None, name="default"):
         """
         创建模型的metadata
         :return:
         """
         metadata_path = self.path / self.metadata_file_name
         metadata = Metadata(
-            authors="example_authors",
-            emails="human@human.com",
-            version="0.0.0",
-            tags=["example_tag"],
+            authors=authors,
+            emails=emails,
+            version=version,
+            tags=tags,
             name=name
         )
         with metadata_path.open("w", encoding="utf-8") as f:
@@ -109,11 +115,15 @@ class Model:
 
     def remove_metadata(self):
         metadata_path = self.path / self.metadata_file_name
-        metadata_path.unlink()
+        if metadata_path.exists():
+            metadata_path.unlink()
+
+
 
 def get_metadata(torrent: Torrent) -> Metadata:
-    metadata: Metadata = from_torrent(torrent,Metadata)
+    metadata: Metadata = from_torrent(torrent, Metadata)
     return metadata
+
 
 def _info(torrent: Torrent, fields: Optional[List[str]] = None):
     data = get_metadata(torrent).model_dump()

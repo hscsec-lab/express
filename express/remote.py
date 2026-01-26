@@ -4,7 +4,7 @@ import tempfile
 from contextlib import contextmanager
 from io import BufferedReader
 from pathlib import Path
-from typing import List, Optional, BinaryIO, Any, Generator
+from typing import List, Any, Generator
 
 import boto3
 from rich.text import Text
@@ -215,7 +215,7 @@ def pull(torrent: Torrent, remote: Remote, force=False) -> Model:
 
 
 def ls(remote: Remote,torrent: bool = False):
-    console.print(_list(remote,torrent))
+    console.print(_list(remote,torrent),overflow="ignore")
 
 def search(remote: Remote, field: str, value: str):
     metadata_list = search_exact(_list(remote), field, value)
