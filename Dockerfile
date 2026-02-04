@@ -4,7 +4,8 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-setuptools \
-    python3-wheel
+    python3-wheel \
+    jq
 COPY pyproject.toml ./
 RUN pip3 install --no-cache-dir -i http://pypi.dog.cat/root/pypi/+simple/ --trusted-host pypi.dog.cat .
 COPY . .

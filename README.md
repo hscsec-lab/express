@@ -11,7 +11,7 @@ pip install express --index-url http://pypi.dog.cat/gitlab/dev/+simple/ --truste
 创建模型(若已有模型可跳过这一步)
 
 ```shell
-$ express create model_name
+$ express create model_name #model_name指的是存放模型文件的文件夹，通常我们认为模型文件夹名应与模型名相同
 Created model model_name
 $ ls model_name
 index.json  metadata.json
@@ -76,4 +76,9 @@ flowchart TD
     style E fill:#f6ffed,stroke:#52c41a
     style F fill:#f9f0ff,stroke:#722ed1
     style G fill:#fff7e6,stroke:#fa8c16
+```
+
+## 设置工作目录
+```shell
+export LOCAL_WORKDIR=XXX
 ```
