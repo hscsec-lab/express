@@ -1,4 +1,3 @@
-import json
 import os
 import shlex
 import subprocess
@@ -7,14 +6,14 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from simple_file_checksum import get_checksum
+from src import console
 
-from src.express import console
-from src.express.client import Remote
-from src.express.data import Torrent
-from src.express.file import FolderIndex, get_remote_chunk_metadata_from_index
-from src.express.model import MODEL_INDEX_FILE_NAME
-from src.express.remote import pull_index_with_torrent
-from src.express.transfer import push_chunk, open_remote_file, pull_file
+from base.client import Remote
+from base.data import Torrent
+from base.file import FolderIndex, get_remote_chunk_metadata_from_index
+from base.model import MODEL_INDEX_FILE_NAME
+from base.remote import pull_index_with_torrent
+from base.transfer import push_chunk, pull_file
 
 
 def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):

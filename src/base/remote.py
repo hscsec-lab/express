@@ -4,12 +4,12 @@ import tempfile
 from pathlib import Path
 from typing import List
 
-from src.express import console
-from src.express.client import Remote, search_extension, is_remote_file_exists
-from src.express.data import Torrent, get_torrent, from_torrent, search_exact
-from src.express.file import FolderIndex, FileMetadata
-from src.express.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
-from src.express.transfer import push_file, pull_file, open_remote_file
+from src import console
+from base.client import Remote, search_extension, is_remote_file_exists
+from base.data import Torrent, get_torrent, from_torrent, search_exact
+from base.file import FolderIndex, FileMetadata
+from base.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
+from base.transfer import push_file, pull_file, open_remote_file
 
 LOCAL_WORKDIR = Path(os.getenv('LOCAL_WORKDIR', '/models'))
 
@@ -26,7 +26,7 @@ def _list(remote: Remote, torrent: bool = False) -> List[Metadata] | List[Torren
 
     if torrent:
         return torrents
-    return metadata_list
+    return metadata_list # 根据上层调用需求返回Metadata列表或者Torrent列表
 
 def push(model: Model, remote: Remote) -> None:
     """Pushes a model and its indexed files to the remote server."""

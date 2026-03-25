@@ -15,9 +15,9 @@ dependencies = [
     "typer>=0.20.0",
 ]
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src.*"]
+where = ["src"]
+include = ["*"]
 
 
 [project.scripts]
-express="src.express.cli:app"
+express="vendor.cli:app"
