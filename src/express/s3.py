@@ -25,17 +25,23 @@ class ProgressBase:
         return f"{num:.1f} PB"
 
     def _get_smooth_speed(self, current_total: int) -> float:
-        """通过滑动窗口计算平滑速度"""
         now = time.time()
-        self._samples.append((now, current_total))
+
+        # 1. 采样限流：避免高频调用撑死 deque
+        if not self._samples or (now - self._samples[-1][0] >= 0.1):
+            self._samples.append((now, current_total))
 
         if len(self._samples) < 2:
             return 0.0
 
-        # 取窗口内最早和最晚的样本计算平均值
-        dt = self._samples[-1][0] - self._samples[0][0]
-        db = self._samples[-1][1] - self._samples[0][1]
-        return db / dt if dt > 0 else 0.0
+        # 2. 计算窗口内的平均速度 (滑动平均)
+        t1, b1 = self._samples[0]
+        t2, b2 = self._samples[-1]
+
+        dt = t2 - t1
+        if dt <= 0: return 0.0
+
+        return (b2 - b1) / dt
 
     def _write(self, s: str):
         if not self._silent:
