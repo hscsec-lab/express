@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import zlib
 from pathlib import Path
 from typing import Optional, List
 
@@ -10,12 +9,13 @@ from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 
 from express import console
-from express.data import from_torrent, Torrent, get_torrent
-from express.file import generate_index, FolderIndex
-from rich.pretty import pprint, Pretty
+from express.base.data import from_torrent, Torrent, get_torrent
+from express.base.file import generate_index, FolderIndex
+from rich.pretty import Pretty
 
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 MODEL_INDEX_FILE_NAME = os.getenv("MODEL_INDEX_FILE_NAME", 'express-index.json')
+METADATA_FILE_NAME = os.getenv("METADATA_FILE_NAME", 'metadata.json')
 
 
 class Metadata(BaseModel):
@@ -53,16 +53,15 @@ class Model:
         if not path.exists():
             console.print(f"Created model {path}")
             path.mkdir()
-        self.metadata_file_name = 'metadata.json'
+        self.metadata_file_name = METADATA_FILE_NAME
         self.path = path
-        self.index_file_name = MODEL_INDEX_FILE_NAME
         self.folder_index: FolderIndex = self.write_index_file()  # 每次调用覆盖到最新的索引
 
         assert self.path.is_dir(), f"{self.path} must be directory."
 
     def write_index_file(self) -> FolderIndex:
         folder_index: FolderIndex = generate_index(self.path)
-        with (self.path / self.index_file_name).open('w', encoding='utf-8') as f:
+        with (self.path / MODEL_INDEX_FILE_NAME).open('w', encoding='utf-8') as f:
             json.dump(
                 folder_index.model_dump(exclude_none=False),
                 f,
@@ -72,10 +71,10 @@ class Model:
             return folder_index
 
     def is_index_file_exists(self):
-        return (self.path / self.index_file_name).exists()
+        return (self.path / MODEL_INDEX_FILE_NAME).exists()
 
     def remove_index_file(self):
-        index_path = self.path / self.index_file_name
+        index_path = self.path / MODEL_INDEX_FILE_NAME
         if index_path.exists():
             index_path.unlink()
 

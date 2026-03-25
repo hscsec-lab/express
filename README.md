@@ -77,3 +77,8 @@ flowchart TD
     style F fill:#f9f0ff,stroke:#722ed1
     style G fill:#fff7e6,stroke:#fa8c16
 ```
+
+## 设置工作目录
+```shell
+export LOCAL_WORKDIR=XXX
+```

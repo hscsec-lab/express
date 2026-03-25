@@ -2,15 +2,27 @@ from pathlib import Path
 
 import typer
 
-from express import remote
-from express.data import Torrent
-from express.model import Model, get_metadata, _info
-from express.remote import Remote
+from express.base import remote
+from express.base.data import Torrent
+from express.functions.edit_file import edit_file
+from express.base.model import Model, _info
+from express.base.remote import Remote
 
 app = typer.Typer(
     name="express",
     no_args_is_help=True
 )
+
+
+@app.command()
+def edit(torrent: str, remote_file_name: str):
+    """
+    在线编辑远程文件
+    :param torrent:
+    :param remote_file_name:
+    :return:
+    """
+    edit_file(Remote(), Torrent(torrent), remote_file_name)
 
 
 @app.command()
@@ -89,6 +101,7 @@ def init(model_path: Path, authors="default_author", emails="default@email.com",
            tags=tags,
            name=name)
 
+
 @app.command()
 def clear(model_path: Path):
     """
@@ -99,6 +112,7 @@ def clear(model_path: Path):
     model = Model(model_path)
     model.remove_metadata()
     model.remove_index_file()
+
 
 @app.command()
 def ls(torrent: bool = False):

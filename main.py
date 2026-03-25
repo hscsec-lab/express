@@ -1,4 +1,4 @@
-from express.cli import app
+from express.vendor.cli import app
 
 
 def main():
