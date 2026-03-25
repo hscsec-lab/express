@@ -6,14 +6,14 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from simple_file_checksum import get_checksum
-from src import console
+from express import console
 
-from base.client import Remote
-from base.data import Torrent
-from base.file import FolderIndex, get_remote_chunk_metadata_from_index
-from base.model import MODEL_INDEX_FILE_NAME
-from base.remote import pull_index_with_torrent
-from base.transfer import push_chunk, pull_file
+from express.base.client import Remote
+from express.base.data import Torrent
+from express.base.file import FolderIndex, get_remote_chunk_metadata_from_index
+from express.base.model import MODEL_INDEX_FILE_NAME
+from express.base.remote import pull_index_with_torrent
+from express.base.transfer import push_chunk, pull_file
 
 
 def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):

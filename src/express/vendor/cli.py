@@ -2,11 +2,11 @@ from pathlib import Path
 
 import typer
 
-from base import remote
-from base.data import Torrent
-from functions.edit_file import edit_file
-from base.model import Model, _info
-from base.remote import Remote
+from express.base import remote
+from express.base.data import Torrent
+from express.functions.edit_file import edit_file
+from express.base.model import Model, _info
+from express.base.remote import Remote
 
 app = typer.Typer(
     name="express",

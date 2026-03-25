@@ -6,11 +6,11 @@ from typing import Any, Generator
 from rich.text import Text
 from simple_file_checksum import get_checksum
 
-from src import console
-from base.client import is_remote_file_exists, Remote
-from base.file import FileMetadata
-from base.model import Model, MODEL_INDEX_FILE_NAME
-from base.s3 import ProgressPercentage, DownloadProgressSimple
+from express import console
+from express.base.client import is_remote_file_exists, Remote
+from express.base.file import FileMetadata
+from express.base.model import Model, MODEL_INDEX_FILE_NAME
+from express.base.s3 import ProgressPercentage, DownloadProgressSimple
 
 
 def push_chunk(remote: Remote, local_file_path: Path,remote_file_name: str = None,force: bool = False) -> None:

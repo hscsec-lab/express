@@ -4,12 +4,12 @@ import tempfile
 from pathlib import Path
 from typing import List
 
-from src import console
-from base.client import Remote, search_extension, is_remote_file_exists
-from base.data import Torrent, get_torrent, from_torrent, search_exact
-from base.file import FolderIndex, FileMetadata
-from base.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
-from base.transfer import push_file, pull_file, open_remote_file
+from express import console
+from express.base.client import Remote, search_extension, is_remote_file_exists
+from express.base.data import Torrent, get_torrent, from_torrent, search_exact
+from express.base.file import FolderIndex, FileMetadata
+from express.base.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
+from express.base.transfer import push_file, pull_file, open_remote_file
 
 LOCAL_WORKDIR = Path(os.getenv('LOCAL_WORKDIR', '/models'))
 

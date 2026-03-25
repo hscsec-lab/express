@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from base.model import Metadata
+from express.base.model import Metadata
 
 
 def test_metadata_valid_semver():

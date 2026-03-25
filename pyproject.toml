@@ -20,4 +20,4 @@ include = ["*"]
 
 
 [project.scripts]
-express="vendor.cli:app"
+express="express.vendor.cli:app"
