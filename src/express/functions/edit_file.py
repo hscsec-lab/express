@@ -1,5 +1,7 @@
 import json
 import os
+import shlex
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -24,8 +26,13 @@ def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
     :return:
     """
     with open_remote_file_rw(remote, torrent, remote_file_name) as f:
-        editor = os.getenv('EDITOR', 'vim')
-        os.system(f'{editor} {f.name}')
+        editor_cmd = os.getenv('EDITOR', 'vim')
+        cmd = shlex.split(editor_cmd)
+        cmd.append(f.name)
+        try:
+            subprocess.run(cmd, check=True)
+        except FileNotFoundError:
+            print(f"错误：找不到编辑器 '{cmd[0]}'")
 
 @contextmanager
 def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str):
@@ -38,6 +45,7 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
     """
     index: FolderIndex = FolderIndex(**pull_index_with_torrent(torrent=torrent, remote=remote))
     remote_chunk_metadata = get_remote_chunk_metadata_from_index(index, remote_file_name)
+    assert remote_file_name in [index_file.file_name for index_file in index.folder_index], f"File {remote_file_name} is not exist in index."
     with NamedTemporaryFile('r+') as metadata_file:
         with NamedTemporaryFile('r+') as tmp_file:
             pull_file(remote,Path(remote_chunk_metadata.file_checksum_sha256), Path(tmp_file.name), file_checksum_sha256=remote_chunk_metadata.file_checksum_sha256, force=True)

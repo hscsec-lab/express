@@ -2,40 +2,20 @@ import os
 import sys
 import threading
 import time
+from collections import deque
 from typing import Optional
 
-
-class DownloadProgressSimple:
-    def __init__(
-            self,
-            filename: str = "",
-            prefix: str = "Downloading",
-            use_ansi: bool = True,
-            silent: bool = False,
-    ):
-        self._filename = (filename[:25] + '..') if len(filename) > 27 else filename
-        self._seen_so_far = 0
-        self._start_time = time.time()
-        self._last_time = self._start_time
-        self._last_seen = 0
-        self._lock = threading.Lock()
-        self._prefix = prefix
+class ProgressBase:
+    """通用进度逻辑基类"""
+    def __init__(self, use_ansi: bool = True, silent: bool = False):
         self._use_ansi = use_ansi
         self._silent = silent
+        self._lock = threading.Lock()
 
-        # Build label and record its length (for overwriting correctly)
-        self._label = f"{self._prefix}: {self._filename}"
-        try:
-            max_label_len = min(max(os.get_terminal_size().columns - 30, 20), 40)
-            self._label = self._label[:max_label_len]
-        except OSError:
-            pass  # keep as is
-        self._label_len = len(self._label)
-
-        if not self._silent:
-            # Print label, then leave cursor at end (no \n)
-            sys.stdout.write(self._label)
-            sys.stdout.flush()
+        # 用于平滑速度计算的滑动窗口 (保存最近3秒的样本)
+        self._samples = deque(maxlen=10)
+        self._start_time = time.time()
+        self._seen_so_far = 0
 
     def _format_bytes(self, num: float) -> str:
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
@@ -44,165 +24,94 @@ class DownloadProgressSimple:
             num /= 1024.0
         return f"{num:.1f} PB"
 
-    def __call__(self, bytes_amount: int):
-        if bytes_amount <= 0 or self._silent:
-            return
+    def _get_smooth_speed(self, current_total: int) -> float:
+        """通过滑动窗口计算平滑速度"""
+        now = time.time()
+        self._samples.append((now, current_total))
 
+        if len(self._samples) < 2:
+            return 0.0
+
+        # 取窗口内最早和最晚的样本计算平均值
+        dt = self._samples[-1][0] - self._samples[0][0]
+        db = self._samples[-1][1] - self._samples[0][1]
+        return db / dt if dt > 0 else 0.0
+
+    def _write(self, s: str):
+        if not self._silent:
+            # \033[K 是清除光标到行尾的关键，彻底解决残留
+            clear_line = "\033[K" if self._use_ansi else " " * 20
+            sys.stdout.write(f"\r{s}{clear_line}")
+            sys.stdout.flush()
+
+class DownloadProgressSimple(ProgressBase):
+    def __init__(self, filename: str = "", prefix: str = "Downloading", **kwargs):
+        super().__init__(**kwargs)
+        # 简化文件名显示
+        self._display_name = (filename[:22] + '..') if len(filename) > 25 else filename
+        self._prefix = prefix
+
+    def __call__(self, bytes_amount: int):
         with self._lock:
             self._seen_so_far += bytes_amount
-            now = time.time()
+            speed = self._get_smooth_speed(self._seen_so_far)
 
-            delta_bytes = self._seen_so_far - self._last_seen
-            delta_time = now - self._last_time
-            speed = delta_bytes / delta_time if delta_time > 0 else 0.0
-            self._last_seen = self._seen_so_far
-            self._last_time = now
-
-            downloaded = self._format_bytes(self._seen_so_far)
-            speed_str = f"{self._format_bytes(speed)}/s" if speed > 0 else "-- B/s"
-
-            yellow = "\033[33m" if self._use_ansi else ""
+            color = "\033[33m" if self._use_ansi else ""
             reset = "\033[0m" if self._use_ansi else ""
 
-            # ✅ Key fix: \r + pad label area with spaces, then write progress
-            # e.g.: "\rDownloading: model.bin          12.3 MB [1.2 MB/s]"
-            progress_part = f"{yellow}{downloaded}{reset} [{speed_str}]"
-            line = f"\r{self._label:<{self._label_len}} {progress_part}"
-
-            sys.stdout.write(line)
-            sys.stdout.flush()
+            msg = (f"{self._prefix}: {self._display_name} | "
+                   f"{color}{self._format_bytes(self._seen_so_far)}{reset} "
+                   f"[{self._format_bytes(speed)}/s]")
+            self._write(msg)
 
     def done(self):
-        """Finalize with green 'done' and newline."""
-        if self._silent:
-            return
-        final_size = self._format_bytes(self._seen_so_far)
-        green = "\033[32m" if self._use_ansi else ""
-        reset = "\033[0m" if self._use_ansi else ""
-        # Overwrite with final state + newline
-        line = f"\r{self._label:<{self._label_len}} {green}{final_size}{reset} [done]\n"
-        sys.stdout.write(line)
-        sys.stdout.flush()
+        self._write(f"{self._prefix}: {self._display_name} | \033[32mDone.\033[0m\n")
 
-class ProgressPercentage:
-    def __init__(
-            self,
-            filename: str,
-            prefix: str = "Uploading",
-            use_ansi: bool = True,
-            width: Optional[int] = None,
-            silent: bool = False
-    ):
+
+class ProgressPercentage(ProgressBase):
+    def __init__(self, filename: str, prefix: str = "Progress", width: Optional[int] = None, **kwargs):
+        super().__init__(**kwargs)
         self._filename = os.path.basename(filename)
-        self._size = float(os.path.getsize(filename))
-        self._seen_so_far = 0
-        self._start_time = time.time()
-        self._last_time = self._start_time
-        self._last_seen = 0
-        self._lock = threading.Lock()
+        try:
+            self._total_size = os.path.getsize(filename)
+        except OSError:
+            self._total_size = 0
+
         self._prefix = prefix
-        self._use_ansi = use_ansi
-        self._silent = silent
+        self._bar_width = width or self._get_terminal_width()
 
-        # Determine progress bar width
-        if width is None:
-            try:
-                # Try to get terminal width; fallback to 50
-                self._width = min(max(os.get_terminal_size().columns - 40, 20), 60)
-            except OSError:  # e.g., in CI without TTY
-                self._width = 50
-        else:
-            self._width = width
-
-        self._bar_char = '█'
-        self._empty_char = '░'
-
-        if self._size <= 0:
-            self._size = 1  # avoid div-by-zero; treat as unknown size
-
-        if not self._silent:
-            self._print_initial()
-
-    def _format_bytes(self, num: float) -> str:
-        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if abs(num) < 1024.0:
-                return f"{num:.1f} {unit}"
-            num /= 1024.0
-        return f"{num:.1f} PB"
-
-    def _print_initial(self):
-        name_display = (self._filename[:25] + '..') if len(self._filename) > 27 else self._filename
-        action = f"{self._prefix}: {name_display}"
-        size_str = self._format_bytes(self._size) if self._size > 0 else "???"
-        sys.stdout.write(f"{action:<30} [{size_str:>8}]\n")
-        sys.stdout.flush()
+    def _get_terminal_width(self):
+        try:
+            return min(max(os.get_terminal_size().columns - 50, 20), 40)
+        except OSError:
+            return 30
 
     def __call__(self, bytes_amount: int):
-        if bytes_amount < 0:
-            return  # ignore invalid calls
-
         with self._lock:
             self._seen_so_far += bytes_amount
-            now = time.time()
+            # 兼容上传可能超过总大小的特殊情况
+            safe_seen = min(self._seen_so_far, self._total_size) if self._total_size > 0 else self._seen_so_far
 
-            # Clamp seen to size to avoid >100% due to retries/over-fetch
-            current = min(self._seen_so_far, self._size)
+            speed = self._get_smooth_speed(self._seen_so_far)
+            ratio = (safe_seen / self._total_size) if self._total_size > 0 else 0
 
-            # Calculate progress
-            percentage = (current / self._size) * 100 if self._size > 0 else 0.0
+            # ETA 计算
+            eta_str = "--:--"
+            if ratio < 1 and speed > 0 and self._total_size > 0:
+                remaining = (self._total_size - self._seen_so_far) / speed
+                eta_str = time.strftime('%M:%S', time.gmtime(remaining)) if remaining < 3600 else " >1h"
 
-            # Calculate speed (based on last chunk, smoother than avg)
-            delta_bytes = current - self._last_seen
-            delta_time = now - self._last_time
-            speed = delta_bytes / delta_time if delta_time > 0 else 0.0
-            self._last_seen = current
-            self._last_time = now
+            # 进度条组装
+            filled = int(self._bar_width * ratio)
+            bar = '█' * filled + '░' * (self._bar_width - filled)
 
-            # ETA (only if progress > 0 and < 100%)
-            eta = ""
-            if 0 < percentage < 100 and speed > 0:
-                remaining_bytes = self._size - current
-                eta_sec = remaining_bytes / speed
-                if eta_sec < 60:
-                    eta = f" ETA {eta_sec:.0f}s"
-                elif eta_sec < 3600:
-                    eta = f" ETA {eta_sec / 60:.0f}m"
-                else:
-                    eta = f" ETA {eta_sec / 3600:.1f}h"
-
-            # Build progress bar
-            bar_len = int(self._width * percentage / 100)
-            bar = self._bar_char * bar_len + self._empty_char * (self._width - bar_len)
-
-            # ANSI colors (green for done, yellow for ongoing)
-            green = "\033[32m" if self._use_ansi else ""
-            yellow = "\033[33m" if self._use_ansi else ""
+            color = "\033[32m" if ratio >= 1 else "\033[33m"
             reset = "\033[0m" if self._use_ansi else ""
 
-            percent_str = f"{percentage:5.1f}%"
-            speed_str = f"{self._format_bytes(speed)}/s" if speed > 0 else "-- B/s"
-            current_str = self._format_bytes(current)
-            total_str = self._format_bytes(self._size)
+            line = (f"{self._prefix} |{bar}| {ratio:6.1%} "
+                    f"{self._format_bytes(safe_seen)}/{self._format_bytes(self._total_size)} "
+                    f"[{self._format_bytes(speed)}/s, ETA {eta_str}]")
 
-            status_color = green if percentage >= 100 else yellow
-            line = (
-                f"\r{status_color}{percent_str}{reset} "
-                f"|{bar}| "
-                f"{current_str}/{total_str} "
-                f"[{speed_str}]{eta}"
-            )
-
-            if not self._silent:
-                sys.stdout.write(line)
-                sys.stdout.flush()
-
-            # Final newline on completion
-            if percentage >= 100:
-                if not self._silent:
-                    sys.stdout.write("\n")
-                self._done = True
-
-    # Optional: allow reuse
-    def reset(self, filename: str):
-        with self._lock:
-            self.__init__(filename, self._prefix, self._use_ansi, self._width, self._silent)
+            self._write(line)
+            if ratio >= 1:
+                sys.stdout.write("\n")
