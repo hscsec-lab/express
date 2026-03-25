@@ -2,10 +2,10 @@ from pathlib import Path
 
 import typer
 
-from express import remote
-from express.data import Torrent
-from express.model import Model, get_metadata, _info
-from express.remote import Remote
+from src.express import remote
+from src.express.data import Torrent
+from src.express.model import Model, _info
+from src.express.remote import Remote
 
 app = typer.Typer(
     name="express",

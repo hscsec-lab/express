@@ -23,6 +23,8 @@ class FileMetadata(BaseModel):
         else:
             raise ValueError(f"Expected str or Path, got {type(v)}")
 
+    def get_remote_chunk_name(self):
+        return self.file_checksum_sha256
 class FolderIndex(BaseModel):
         folder_index: List[FileMetadata] = []
 
@@ -46,5 +48,17 @@ def generate_index(folder_path: Path) -> FolderIndex:
             )
     return FolderIndex(folder_index=file_metadatas)
 
+def get_remote_chunk_metadata_from_index(folder_index: FolderIndex, remote_file_name: str) -> FileMetadata | None:
+    """
+        根据索引获取远程文件名
+    :param folder_index:
+    :param remote_file_name:
+    :return:
+    """
+    for file_metadata in folder_index.folder_index:
+        if file_metadata.file_name == remote_file_name:
+            return file_metadata
+    return None
+
 if __name__ == '__main__':
-    print(generate_index(Path('../express')))
+    print(generate_index(Path('')))

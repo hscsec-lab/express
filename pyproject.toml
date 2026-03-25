@@ -1,6 +1,6 @@
 [project]
 name = "express"
-version = "0.1.3"
+version = "0.1.4"
 description = "看README"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,8 +16,8 @@ dependencies = [
 ]
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["express"]
+include = ["src.*"]
 
 
 [project.scripts]
-express="express.cli:app"
+express="src.express.cli:app"
