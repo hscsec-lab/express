@@ -6,10 +6,7 @@ RUN apt-get update && apt-get install -y \
     python3-setuptools \
     python3-wheel \
     jq
-COPY pyproject.toml ./
-RUN pip3 install --no-cache-dir -i http://pypi.dog.cat/root/pypi/+simple/ --trusted-host pypi.dog.cat .
 COPY . .
-# 重新安装项目
 RUN pip3 install --no-cache-dir -i http://pypi.dog.cat/root/pypi/+simple/ --trusted-host pypi.dog.cat . --force-reinstall --no-deps
 
 CMD ["express"]
