@@ -7,6 +7,6 @@ RUN apt-get update && apt-get install -y \
     python3-wheel \
     jq
 COPY . .
-RUN pip3 install --no-cache-dir -i http://pypi.dog.cat/root/pypi/+simple/ --trusted-host pypi.dog.cat . --force-reinstall --no-deps
+RUN pip3 install --no-cache-dir -i http://pypi.dog.cat/root/pypi/+simple/ --trusted-host pypi.dog.cat .
 
 CMD ["express"]
