@@ -15,6 +15,16 @@ from express.base.model import MODEL_INDEX_FILE_NAME
 from express.base.remote import pull_index_with_torrent
 from express.base.transfer import push_chunk, pull_file
 
+def edit_local_file(f):
+    """
+    Edit a local file using the system's default editor.
+    :param f:
+    :return:
+    """
+    editor_cmd = os.getenv('EDITOR', 'vim')
+    cmd = shlex.split(editor_cmd)
+    cmd.append(f.name)
+    subprocess.run(cmd, check=True)
 
 def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
     """
@@ -25,13 +35,7 @@ def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
     :return:
     """
     with open_remote_file_rw(remote, torrent, remote_file_name) as f:
-        editor_cmd = os.getenv('EDITOR', 'vim')
-        cmd = shlex.split(editor_cmd)
-        cmd.append(f.name)
-        try:
-            subprocess.run(cmd, check=True)
-        except FileNotFoundError:
-            print(f"错误：找不到编辑器 '{cmd[0]}'")
+        edit_local_file(f)
 
 @contextmanager
 def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str):
