@@ -133,3 +133,13 @@ def search(field: str, value: str):
     :return:
     """
     remote.search(remote=Remote(), field=field, value=value)
+
+@app.command()
+def view(model_path: Path):
+    """
+    查看模型信息
+    :param model_path:
+    :return:
+    """
+    model = Model(model_path)
+    model.view_gui()

@@ -13,6 +13,8 @@ from express.base.data import from_torrent, Torrent, get_torrent
 from express.base.file import generate_index, FolderIndex
 from rich.pretty import Pretty
 
+from express.functions.view_model import view_model
+
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 MODEL_INDEX_FILE_NAME = os.getenv("MODEL_INDEX_FILE_NAME", 'express-index.json')
 METADATA_FILE_NAME = os.getenv("METADATA_FILE_NAME", 'metadata.json')
@@ -117,7 +119,8 @@ class Model:
         if metadata_path.exists():
             metadata_path.unlink()
 
-
+    def view_gui(self):
+        view_model(str(self.path))
 
 def get_metadata(torrent: Torrent) -> Metadata:
     metadata: Metadata = from_torrent(torrent, Metadata)
