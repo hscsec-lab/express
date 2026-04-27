@@ -1,4 +1,3 @@
-from textual.containers import VerticalScroll
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM
 from textual.app import App, ComposeResult
@@ -28,7 +27,12 @@ class ModelTreeViewer(Static):
             if found:
                 node = found
             else:
-                label = f"{part} [dim]({info['er']:.2f})[/]" if is_leaf else part
+                if is_leaf:
+                    fp = info.get('fp', "")
+                    er = info.get('er', 0.0)
+                    label = f"{part} [dim]({er:.2f})[/] [yellow]{fp}[/]"
+                else:
+                    label = part
                 node = node.add(label, expand=False)
 
 class ModelTableViewer(Static):
@@ -42,12 +46,32 @@ class ModelTableViewer(Static):
     def compose(self) -> ComposeResult:
         table = DataTable()
         table.zebra_stripes = True
-        table.add_columns("Param Name", "ER", "Top SVs")
+        table.cursor_type = "row"  # 设置光标为整行选中，体验更好
+        # 添加列并获取列键（Column Key），方便排序
+        table.add_column("Param Name", key="name")
+        table.add_column("ER", key="er")
+        table.add_column("Top SVs", key="svs")
+
         for name, info in self.data.items():
-            svs = ", ".join([f"{x:.2f}" for x in info['sv']])
-            table.add_row(name, f"{info['er']:.2f}", svs)
+            if isinstance(info['fp'], list):
+                svs = ", ".join([f"{x:.2f}" for x in info['fp']])
+            else:
+                svs = str(info['fp'])
+            # 填入数据
+            table.add_row(name, info['er'], svs, label=name)
         yield table
 
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        """
+        当点击表头时触发排序
+        """
+        table = self.query_one(DataTable)
+        # 根据点击的列进行排序
+        # ER 列（索引1）按数值排，其他按字符串排
+        if event.column_index == 1:
+            table.sort(event.column_key, key=float, reverse=True)
+        else:
+            table.sort(event.column_key)
 class UnifiedInspector(App):
     BINDINGS = [("q", "quit", "Quit")]
 
