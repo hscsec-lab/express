@@ -30,7 +30,7 @@ class ModelTreeViewer(Static):
                 if is_leaf:
                     fp = info.get('fp', "")
                     er = info.get('er', 0.0)
-                    label = f"{part} [dim]({er:.2f})[/] [yellow]{fp}[/]"
+                    label = f"{part} [dim](ER: {er:.2f})[/] [yellow]SVs: {fp}[/]"
                 else:
                     label = part
                 node = node.add(label, expand=False)
@@ -49,8 +49,8 @@ class ModelTableViewer(Static):
         table.cursor_type = "row"  # 设置光标为整行选中，体验更好
         # 添加列并获取列键（Column Key），方便排序
         table.add_column("Param Name", key="name")
-        table.add_column("ER", key="er")
-        table.add_column("Top SVs", key="svs")
+        table.add_column("ER(Effective Rank)", key="er")
+        table.add_column("Top SVs(Singular Values)", key="svs")
 
         for name, info in self.data.items():
             if isinstance(info['fp'], list):
