@@ -14,3 +14,4 @@ src/express/test_file
 tmp
 *.flamegraph
 *.ss
+.cache
