@@ -1,10 +1,14 @@
 import unittest
 
 import torch
+from joblib import Memory
 
+cachedir = '.cache'
+memory = Memory(cachedir, verbose=0)
 
 class SVDAnalyzer:
     @staticmethod
+    @memory.cache
     def get_svd_fingerprint(tensor: torch.Tensor, bins: int = 10) -> str:
         if tensor.ndim < 2: return ""
 
@@ -63,7 +67,7 @@ class TestSVDAnalyzer(unittest.TestCase):
         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
         er = SVDAnalyzer.get_effective_rank(tensor)
 
-        print(f"\nFull Rank [Eye]: {fingerprint} ER: {er:.2f}")
+        print(f"\nFull Rank [Eye]: {fingerprint} ER(Effective Rank): {er:.2f}")
         # 理想状态下，全秩矩阵的指纹应该是满格的 [██████████]
         self.assertIn("█", fingerprint)
         self.assertAlmostEqual(er, 100.0, delta=1.0)
