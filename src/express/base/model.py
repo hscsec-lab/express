@@ -175,7 +175,7 @@ class Model:
         console.print(f"Saving model to {temp_dir}")
         instance.save_pretrained(temp_dir)
         tokenizer = AutoTokenizer.from_pretrained(self.path)
-        console.print(f"Saving tokenizers to {temp_dir}.")
+        console.print(f"Saving tokenizers to {temp_dir}")
         tokenizer.save_pretrained(temp_dir)
         return Model(temp_dir)
 
