@@ -1,5 +1,7 @@
+import ast
 import copy
 import json
+import operator
 import os
 import re
 import tempfile
@@ -11,7 +13,7 @@ import torch
 from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, PreTrainedModel
+from transformers import AutoModelForCausalLM, PreTrainedModel, AutoTokenizer
 
 from express import console
 from express.base.data import from_torrent, Torrent, get_torrent
@@ -23,7 +25,36 @@ from express.functions.view_model import view_model
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 MODEL_INDEX_FILE_NAME = os.getenv("MODEL_INDEX_FILE_NAME", 'express-index.json')
 METADATA_FILE_NAME = os.getenv("METADATA_FILE_NAME", 'metadata.json')
+OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+}
 
+def evaluate_model_expression(expr: str, model_map: dict):
+    """
+    解析并计算模型表达式
+    :param expr: 表达式字符串，例如 "(A + B) * 0.5"
+    :param model_map: 变量名到 Model 对象的映射
+    """
+    tree = ast.parse(expr, mode='eval')
+
+    def _eval(node):
+        if isinstance(node, ast.BinOp):
+            return OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
+        elif isinstance(node, ast.Num):  # 支持数字缩放
+            return node.n
+        elif isinstance(node, ast.Constant): # 兼容新版 Python
+            return node.value
+        elif isinstance(node, ast.Name):
+            if node.id in model_map:
+                return model_map[node.id]
+            raise ValueError(f"未定义的模型变量: {node.id}")
+        else:
+            raise TypeError(f"不支持的表达式语法: {type(node)}")
+
+    return _eval(tree.body)
 
 class Metadata(BaseModel):
     authors: Optional[str] = None
@@ -78,30 +109,26 @@ class Model:
         model_a = self.model
         model_b = other.model
 
-        # 为了不破坏原模型，通常我们会 copy 一个新模型返回（注意：这会消耗双倍显存/内存）
         sd_a = model_a.state_dict()  # 虽然后面会直接把运算结果覆盖到sd_a，但是sd_a不会进行保存，为了节省资源，我们直接在原模型权重上进行操作
-        sd_b = model_b.state_dict()
+        if isinstance(other, Model):
+            sd_b = other.model.state_dict()
+            with torch.no_grad():
+                for key in tqdm(sd_a.keys(), desc="Model Op"):
+                    if key in sd_b:
+                        # 确保维度一致
+                        if sd_a[key].shape == sd_b[key].shape:
+                            # 执行运算：tensor + tensor
+                            sd_a[key] = op_func(sd_a[key], sd_b[key].to(sd_a[key].device))
 
-        assert len(sd_a.keys()) == len(
-            sd_b.keys()), "Models have different number of parameters, cannot apply operation."
+            # 情况 B: 与常数（标量）运算
+        elif isinstance(other, (int, float)):
+            with torch.no_grad():
+                for key in sd_a.keys():
+                    # 执行运算：tensor + scalar (Torch 会自动处理逐元素运算)
+                    sd_a[key] = op_func(sd_a[key], other)
 
-        keys = list(sd_a.keys())
-        total_keys = len(keys)
-
-        with torch.no_grad():
-            for key in tqdm(keys, desc=f"Applying operation", unit="param", total=total_keys):
-                if key in sd_b:
-                    tensor_a = sd_a[key]
-                    tensor_b = sd_b[key]
-                    if tensor_a.shape == tensor_b.shape:
-                        tensor_b_on_a_device = tensor_b.to(tensor_a.device)
-                        new_tensor = op_func(tensor_a, tensor_b_on_a_device)
-                        sd_a[key] = new_tensor
-                    else:
-                        console.print(f"[yellow]Warning:[/yellow] Shape mismatch for {key}, skipping.")
-                else:
-                    console.print(f"[yellow]Warning:[/yellow] Key {key} not found in the second model.")
-
+        else:
+            raise TypeError(f"Unsupported type: {type(other)}. Must be Model, int, or float.")
         model_a.load_state_dict(sd_a)
         return self._save(model_a)
 
@@ -122,6 +149,13 @@ class Model:
         # 注意：除法需要防止除以 0
         return self._apply_op(other, lambda a, b: a / (b + 1e-12))
 
+    def __rmul__(self, other):
+        return self.__mul__(other)  # 乘法满足交换律
+
+    def __rtruediv__(self, other):
+        # 这是处理 scalar / model 的情况，逻辑稍有不同
+        return self._apply_op(other, lambda a, b: b / (a + 1e-12))
+
     def _load(self, **kwargs) -> PreTrainedModel:
         """
         加载并返回真正的 PreTrainedModel 实例
@@ -131,7 +165,8 @@ class Model:
             console.print(f"Loading weights from {self.path}")
             # 默认使用 auto 映射设备，你可以根据需求调整
             self._model_instance = AutoModelForCausalLM.from_pretrained(
-                self.path
+                self.path,
+                device_map="auto"
             )
         return self._model_instance
 
@@ -139,10 +174,12 @@ class Model:
         """
         Save Model instance to a new temporary directory and return a new Model object pointing to it.
         """
-        # 创建临时目录
-        console.print(f"Saving model to {self.path}")
         temp_dir = Path(tempfile.mkdtemp(prefix="model_op_", suffix=suffix))
+        console.print(f"Saving model to {temp_dir}")
         instance.save_pretrained(temp_dir)
+        tokenizer = AutoTokenizer.from_pretrained(self.path)
+        console.print(f"Saving tokenizers to {temp_dir}.")
+        tokenizer.save_pretrained(temp_dir)
         return Model(temp_dir)
 
     @property

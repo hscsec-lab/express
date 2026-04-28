@@ -1,12 +1,12 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, List
 
 import typer
 
 from express.base import remote
 from express.base.data import Torrent
 from express.functions.edit_file import edit_file
-from express.base.model import Model, _info
+from express.base.model import Model, _info, evaluate_model_expression
 from express.base.remote import Remote
 
 app = typer.Typer(
@@ -150,3 +150,37 @@ def view(model_path: Path, diff_with: Path = None):
         (target_model - model).view_gui()
     else:
         model.view_gui()
+
+@app.command()
+def compute(
+        args: List[str] = typer.Argument(..., help="格式: 别名=路径 [别名=路径 ...] '表达式'"),
+        gui: bool = typer.Option(True, "--no-gui")
+):
+    """
+    支持多模型复杂的四则运算。
+    示例: A=m1.bin B=m2.bin "(A + B) * 0.5"
+    """
+    if len(args) < 2:
+        raise typer.BadParameter("需提供至少一个模型映射和计算表达式。")
+
+    try:
+        # 解构映射关系与表达式
+        mappings, expression = args[:-1], args[-1]
+
+        model_map = {
+            name: Model(Path(path))
+            for item in mappings
+            for name, path in [item.split("=", 1)]
+        }
+
+        result = evaluate_model_expression(expression, model_map)
+
+        if gui and hasattr(result, "view_gui"):
+            result.view_gui()
+
+    except ValueError:
+        typer.secho("解析失败，请检查 'Name=Path' 格式或表达式语法。", fg="red")
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.secho(f"运行出错: {e}", fg="red")
+        raise typer.Exit(1)
