@@ -1,5 +1,5 @@
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, PreTrainedModel
 from textual.app import App, ComposeResult
 from textual.widgets import Tree, Header, DataTable, Footer, TabbedContent, TabPane, Static
 
@@ -102,12 +102,11 @@ def pre_analyze_model(state_dict):
         }
     return results
 
-def view_model(model_path: str):
-    model = AutoModelForCausalLM.from_pretrained(model_path)
+def view_model(model: PreTrainedModel):
     state_dict = model.state_dict()
     data = pre_analyze_model(state_dict)
     UnifiedInspector(model_path, data).run()
 
 if __name__ == '__main__':
     model_path = '/models/HIVE0.5-6B-1115-sft'
-    view_model(model_path)
+    view_model(AutoModelForCausalLM.from_pretrained(model_path))

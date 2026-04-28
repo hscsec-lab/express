@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -134,12 +135,18 @@ def search(field: str, value: str):
     """
     remote.search(remote=Remote(), field=field, value=value)
 
+
 @app.command()
-def view(model_path: Path):
+def view(model_path: Path, diff_with: Path = None):
     """
     查看模型信息
-    :param model_path:
+    :param model_path: 模型路径
+    :param diff_with: 对比差异的模型路径，逻辑为Model(diff_with) - Model(model_path)
     :return:
     """
     model = Model(model_path)
-    model.view_gui()
+    if diff_with:
+        target_model = Model(diff_with)
+        (target_model - model).view_gui()
+    else:
+        model.view_gui()

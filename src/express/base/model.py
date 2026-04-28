@@ -1,12 +1,17 @@
+import copy
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Optional, List
 
 import rich
+import torch
 from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
+from tqdm import tqdm
+from transformers import AutoModelForCausalLM, PreTrainedModel
 
 from express import console
 from express.base.data import from_torrent, Torrent, get_torrent
@@ -58,8 +63,92 @@ class Model:
         self.metadata_file_name = METADATA_FILE_NAME
         self.path = path
         self.folder_index: FolderIndex = self.write_index_file()  # 每次调用覆盖到最新的索引
+        self._model_instance: Optional[PreTrainedModel] = None  # 延迟加载模型实例
 
         assert self.path.is_dir(), f"{self.path} must be directory."
+
+    def _apply_op(self, other, op_func) -> "Model":
+        """
+        通用操作函数：遍历两个模型的 state_dict 并执行 op_func
+        """
+        if not isinstance(other, Model):
+            raise TypeError(f"Operand must be of type Model, not {type(other)}")
+
+        # 确保两个模型都已加载
+        model_a = self.model
+        model_b = other.model
+
+        # 为了不破坏原模型，通常我们会 copy 一个新模型返回（注意：这会消耗双倍显存/内存）
+        new_model_instance = copy.deepcopy(model_a)
+        sd_a = new_model_instance.state_dict()
+        sd_b = model_b.state_dict()
+
+        assert len(sd_a.keys()) == len(sd_b.keys()), "Models have different number of parameters, cannot apply operation."
+
+        keys = list(sd_a.keys())
+        total_keys = len(keys)
+
+        with torch.no_grad():
+            for key in tqdm(keys, desc=f"Applying operation {op_func.__name__}", unit="param", total=total_keys):
+                if key in sd_b:
+                    tensor_a = sd_a[key]
+                    tensor_b = sd_b[key]
+                    if tensor_a.shape == tensor_b.shape:
+                        tensor_b_on_a_device = tensor_b.to(tensor_a.device)
+                        new_tensor = op_func(tensor_a, tensor_b_on_a_device)
+                        sd_a[key] = new_tensor
+                    else:
+                        console.print(f"[yellow]Warning:[/yellow] Shape mismatch for {key}, skipping.")
+                else:
+                    console.print(f"[yellow]Warning:[/yellow] Key {key} not found in the second model.")
+
+        new_model_instance.load_state_dict(sd_a)
+        return self._save(new_model_instance)
+
+    def __add__(self, other):
+        """加法: model1 + model2"""
+        return self._apply_op(other, lambda a, b: a + b)
+
+    def __sub__(self, other):
+        """减法: model1 - model2"""
+        return self._apply_op(other, lambda a, b: a - b)
+
+    def __mul__(self, other):
+        """乘法: model1 * model2 (Hadamard product)"""
+        return self._apply_op(other, lambda a, b: a * b)
+
+    def __truediv__(self, other):
+        """除法: model1 / model2"""
+        # 注意：除法需要防止除以 0
+        return self._apply_op(other, lambda a, b: a / (b + 1e-12))
+
+    def _load(self, **kwargs) -> PreTrainedModel:
+        """
+        加载并返回真正的 PreTrainedModel 实例
+        等价于return AutoModelForCausalLM.from_pretrained(...)
+        """
+        if self._model_instance is None:
+            console.print(f"Loading weights from {self.path}")
+            # 默认使用 auto 映射设备，你可以根据需求调整
+            self._model_instance = AutoModelForCausalLM.from_pretrained(
+                self.path
+            )
+        return self._model_instance
+
+    def _save(self, instance: PreTrainedModel, suffix: str = "_output") -> "Model":
+        """
+        Save Model instance to a new temporary directory and return a new Model object pointing to it.
+        """
+        # 创建临时目录
+        console.print(f"Saving model to {self.path}")
+        temp_dir = Path(tempfile.mkdtemp(prefix="model_op_", suffix=suffix))
+        instance.save_pretrained(temp_dir)
+        return Model(temp_dir)
+
+    @property
+    def model(self):
+        """方便通过 model.model 直接获取实例"""
+        return self._load()
 
     def write_index_file(self) -> FolderIndex:
         folder_index: FolderIndex = generate_index(self.path)
@@ -120,7 +209,7 @@ class Model:
             metadata_path.unlink()
 
     def view_gui(self):
-        view_model(str(self.path))
+        view_model(self.model)
 
 def get_metadata(torrent: Torrent) -> Metadata:
     metadata: Metadata = from_torrent(torrent, Metadata)
