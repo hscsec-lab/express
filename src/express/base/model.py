@@ -69,7 +69,7 @@ class Model:
 
     def _apply_op(self, other, op_func) -> "Model":
         """
-        通用操作函数：遍历两个模型的 state_dict 并执行 op_func
+        通用操作函数：遍历两个模型的 state_dict 并执行 op_func 并将结果赋值到第一个模型中
         """
         if not isinstance(other, Model):
             raise TypeError(f"Operand must be of type Model, not {type(other)}")
@@ -79,8 +79,7 @@ class Model:
         model_b = other.model
 
         # 为了不破坏原模型，通常我们会 copy 一个新模型返回（注意：这会消耗双倍显存/内存）
-        new_model_instance = copy.deepcopy(model_a)
-        sd_a = new_model_instance.state_dict()
+        sd_a = model_a.state_dict() # 虽然后面会直接把运算结果覆盖到sd_a，但是sd_a不会进行保存，为了节省资源，我们直接在原模型权重上进行操作
         sd_b = model_b.state_dict()
 
         assert len(sd_a.keys()) == len(sd_b.keys()), "Models have different number of parameters, cannot apply operation."
@@ -89,7 +88,7 @@ class Model:
         total_keys = len(keys)
 
         with torch.no_grad():
-            for key in tqdm(keys, desc=f"Applying operation {op_func.__name__}", unit="param", total=total_keys):
+            for key in tqdm(keys, desc=f"Applying operation", unit="param", total=total_keys):
                 if key in sd_b:
                     tensor_a = sd_a[key]
                     tensor_b = sd_b[key]
@@ -102,8 +101,8 @@ class Model:
                 else:
                     console.print(f"[yellow]Warning:[/yellow] Key {key} not found in the second model.")
 
-        new_model_instance.load_state_dict(sd_a)
-        return self._save(new_model_instance)
+        model_a.load_state_dict(sd_a)
+        return self._save(model_a)
 
     def __add__(self, other):
         """加法: model1 + model2"""
