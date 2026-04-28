@@ -79,10 +79,11 @@ class Model:
         model_b = other.model
 
         # 为了不破坏原模型，通常我们会 copy 一个新模型返回（注意：这会消耗双倍显存/内存）
-        sd_a = model_a.state_dict() # 虽然后面会直接把运算结果覆盖到sd_a，但是sd_a不会进行保存，为了节省资源，我们直接在原模型权重上进行操作
+        sd_a = model_a.state_dict()  # 虽然后面会直接把运算结果覆盖到sd_a，但是sd_a不会进行保存，为了节省资源，我们直接在原模型权重上进行操作
         sd_b = model_b.state_dict()
 
-        assert len(sd_a.keys()) == len(sd_b.keys()), "Models have different number of parameters, cannot apply operation."
+        assert len(sd_a.keys()) == len(
+            sd_b.keys()), "Models have different number of parameters, cannot apply operation."
 
         keys = list(sd_a.keys())
         total_keys = len(keys)
@@ -145,7 +146,7 @@ class Model:
         return Model(temp_dir)
 
     @property
-    def model(self):
+    def model(self) -> PreTrainedModel:
         """方便通过 model.model 直接获取实例"""
         return self._load()
 
@@ -208,7 +209,8 @@ class Model:
             metadata_path.unlink()
 
     def view_gui(self):
-        view_model(self.model)
+        view_model(self.model, self.path.__str__())
+
 
 def get_metadata(torrent: Torrent) -> Metadata:
     metadata: Metadata = from_torrent(torrent, Metadata)

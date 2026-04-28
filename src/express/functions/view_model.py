@@ -5,10 +5,12 @@ from textual.widgets import Tree, Header, DataTable, Footer, TabbedContent, TabP
 
 from express.math.SVDAnalyzer import SVDAnalyzer
 
+
 class ModelTreeViewer(Static):
     """
     Model tree viewer.
     """
+
     def __init__(self, model_name, data):
         super().__init__()
         self.model_name = model_name
@@ -35,10 +37,12 @@ class ModelTreeViewer(Static):
                     label = part
                 node = node.add(label, expand=False)
 
+
 class ModelTableViewer(Static):
     """
     Model table viewer.
     """
+
     def __init__(self, data):
         super().__init__()
         self.data = data
@@ -72,6 +76,8 @@ class ModelTableViewer(Static):
             table.sort(event.column_key, key=float, reverse=True)
         else:
             table.sort(event.column_key)
+
+
 class UnifiedInspector(App):
     BINDINGS = [("q", "quit", "Quit")]
 
@@ -89,6 +95,7 @@ class UnifiedInspector(App):
                 yield ModelTableViewer(self.data)
         yield Footer()
 
+
 def pre_analyze_model(state_dict):
     """单线程顺序计算，物理内存/显存友好型"""
     results = {}
@@ -102,11 +109,13 @@ def pre_analyze_model(state_dict):
         }
     return results
 
-def view_model(model: PreTrainedModel):
+
+def view_model(model: PreTrainedModel, model_path: str):
     state_dict = model.state_dict()
     data = pre_analyze_model(state_dict)
     UnifiedInspector(model_path, data).run()
 
+
 if __name__ == '__main__':
     model_path = '/models/HIVE0.5-6B-1115-sft'
-    view_model(AutoModelForCausalLM.from_pretrained(model_path))
+    view_model(AutoModelForCausalLM.from_pretrained(model_path), model_path)
