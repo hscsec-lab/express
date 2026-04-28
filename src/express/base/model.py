@@ -102,15 +102,12 @@ class Model:
         """
         通用操作函数：遍历两个模型的 state_dict 并执行 op_func 并将结果赋值到第一个模型中
         """
-        if not isinstance(other, Model):
-            raise TypeError(f"Operand must be of type Model, not {type(other)}")
-
         # 确保两个模型都已加载
         model_a = self.model
-        model_b = other.model
 
         sd_a = model_a.state_dict()  # 虽然后面会直接把运算结果覆盖到sd_a，但是sd_a不会进行保存，为了节省资源，我们直接在原模型权重上进行操作
         if isinstance(other, Model):
+            # 与模型计算
             sd_b = other.model.state_dict()
             with torch.no_grad():
                 for key in tqdm(sd_a.keys(), desc="Model Op"):
@@ -120,8 +117,8 @@ class Model:
                             # 执行运算：tensor + tensor
                             sd_a[key] = op_func(sd_a[key], sd_b[key].to(sd_a[key].device))
 
-            # 情况 B: 与常数（标量）运算
         elif isinstance(other, (int, float)):
+            # 与标量计算
             with torch.no_grad():
                 for key in sd_a.keys():
                     # 执行运算：tensor + scalar (Torch 会自动处理逐元素运算)
