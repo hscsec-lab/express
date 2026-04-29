@@ -99,9 +99,11 @@ class UnifiedInspector(App):
 def pre_analyze_model(state_dict):
     """单线程顺序计算，物理内存/显存友好型"""
     results = {}
-    # 直接迭代，无需包装 Future
     for k, v in tqdm(state_dict.items(), desc="Analyzing Layers"):
-        # 如果后续要用 GPU，这里可以加上 v = v.cuda()
+        if v.is_meta:
+            # 如果显存不足导致是 meta，通常说明它被 offload 到了磁盘
+            print(f"Skipping {k}: Tensor is on 'meta' device (not loaded in RAM)")
+            continue
         results[k] = {
             "shape": list(v.shape),
             "fp": SVDAnalyzer.get_svd_fingerprint(v),

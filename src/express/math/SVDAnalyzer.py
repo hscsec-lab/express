@@ -14,7 +14,7 @@ class SVDAnalyzer:
     def get_svd_fingerprint(cls, tensor: torch.Tensor, bins: int = 10) -> str:
         if tensor.ndim < 2: return ""
         # 统一转为 float32 的 numpy，解决 BF16 报错并适配 joblib 缓存
-        matrix_np = tensor.detach().to(torch.float32).cpu().numpy()
+        matrix_np = tensor.detach().cpu().contiguous().to(torch.float32).numpy()
         return cls._cached_fingerprint_calc(matrix_np, bins)
 
     @staticmethod

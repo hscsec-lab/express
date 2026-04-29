@@ -1,5 +1,5 @@
 import ast
-import copy
+import importlib
 import json
 import operator
 import os
@@ -32,6 +32,7 @@ OPERATORS = {
     ast.Div: operator.truediv,
 }
 
+
 def evaluate_model_expression(expr: str, model_map: dict):
     """
     解析并计算模型表达式
@@ -45,7 +46,7 @@ def evaluate_model_expression(expr: str, model_map: dict):
             return OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
         elif isinstance(node, ast.Num):  # 支持数字缩放
             return node.n
-        elif isinstance(node, ast.Constant): # 兼容新版 Python
+        elif isinstance(node, ast.Constant):  # 兼容新版 Python
             return node.value
         elif isinstance(node, ast.Name):
             if node.id in model_map:
@@ -55,6 +56,7 @@ def evaluate_model_expression(expr: str, model_map: dict):
             raise TypeError(f"不支持的表达式语法: {type(node)}")
 
     return _eval(tree.body)
+
 
 class Metadata(BaseModel):
     authors: Optional[str] = None
@@ -153,18 +155,25 @@ class Model:
         # 这是处理 scalar / model 的情况，逻辑稍有不同
         return self._apply_op(other, lambda a, b: b / (a + 1e-12))
 
-    def _load(self, **kwargs) -> PreTrainedModel:
+    def _load(self, device: str = None, **kwargs) -> PreTrainedModel:
         """
         加载并返回真正的 PreTrainedModel 实例
         等价于return AutoModelForCausalLM.from_pretrained(...)
         """
         if self._model_instance is None:
             console.print(f"Loading weights from {self.path}")
-            # 默认使用 auto 映射设备，你可以根据需求调整
-            self._model_instance = AutoModelForCausalLM.from_pretrained(
-                self.path,
-                device_map="auto"
-            )
+            has_accelerate = importlib.util.find_spec("accelerate") is not None
+            if not device:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            load_params = {
+                "pretrained_model_name_or_path": self.path
+            }
+            if has_accelerate:
+                load_params["device_map"] = "auto"
+                self._model_instance = AutoModelForCausalLM.from_pretrained(**load_params)
+            else:
+                console.print(f"Accelerate not found. Falling back to single device: {device}")
+                self._model_instance = AutoModelForCausalLM.from_pretrained(**load_params).to(device)
         return self._model_instance
 
     def _save(self, instance: PreTrainedModel, suffix: str = "_output") -> "Model":
