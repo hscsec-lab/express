@@ -193,6 +193,7 @@ class Model:
         return self._load()
 
     def write_index_file(self) -> FolderIndex:
+        console.print(f"Writing index file to {self.path}")
         folder_index: FolderIndex = generate_index(self.path)
         with (self.path / MODEL_INDEX_FILE_NAME).open('w', encoding='utf-8') as f:
             json.dump(
