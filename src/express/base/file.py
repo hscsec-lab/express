@@ -1,14 +1,15 @@
+import hashlib
 from pathlib import Path
 from typing import List
 
 from pydantic import BaseModel, field_serializer, field_validator
-from simple_file_checksum import get_checksum
 
 
 class FileMetadata(BaseModel):
     file_name: str
     file_checksum_sha256: str
     file_relative_path: Path
+
     @field_serializer('file_relative_path')
     def serialize_path(self, v: Path) -> str:
         return v.as_posix()
@@ -25,8 +26,37 @@ class FileMetadata(BaseModel):
 
     def get_remote_chunk_name(self):
         return self.file_checksum_sha256
+
+
 class FolderIndex(BaseModel):
-        folder_index: List[FileMetadata] = []
+    folder_index: List[FileMetadata] = []
+
+
+def fast_checksum(file_path: Path, sample_size: int = 65536, sample_segments: int = 3) -> str:
+    """
+    Generate a SHA256 fingerprint by sampling specific segments of a large file.
+    """
+    stat = file_path.stat()
+    file_size = stat.st_size
+    hasher = hashlib.sha256()
+
+    if file_size <= sample_size * sample_segments:
+        with open(file_path, "rb") as f:
+            hasher.update(f.read())
+    else:
+        with open(file_path, "rb") as f:
+            offsets = [
+                max(0, min((file_size - sample_size) * i // (sample_segments - 1), file_size - sample_size))
+                for i in range(sample_segments)
+            ]
+            for offset in offsets:
+                f.seek(offset)
+                hasher.update(f.read(sample_size))
+
+            hasher.update(f"{file_size}_{stat.st_mtime}".encode())
+
+    return hasher.hexdigest()
+
 
 def generate_index(folder_path: Path) -> FolderIndex:
     """
@@ -42,11 +72,12 @@ def generate_index(folder_path: Path) -> FolderIndex:
             file_metadatas.append(
                 FileMetadata(
                     file_name=file_path.name,
-                    file_checksum_sha256=get_checksum(file_path),
+                    file_checksum_sha256=fast_checksum(file_path),
                     file_relative_path=relative_path
                 )
             )
     return FolderIndex(folder_index=file_metadatas)
+
 
 def get_remote_chunk_metadata_from_index(folder_index: FolderIndex, remote_file_name: str) -> FileMetadata | None:
     """
@@ -59,6 +90,3 @@ def get_remote_chunk_metadata_from_index(folder_index: FolderIndex, remote_file_
         if file_metadata.file_name == remote_file_name:
             return file_metadata
     return None
-
-if __name__ == '__main__':
-    print(generate_index(Path('')))
