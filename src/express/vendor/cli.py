@@ -8,6 +8,7 @@ from express.base.data import Torrent
 from express.functions.edit_file import edit_file
 from express.base.model import Model, _info, evaluate_model_expression
 from express.base.remote import Remote
+from express.functions.view_model import view_model
 
 app = typer.Typer(
     name="express",
@@ -137,7 +138,7 @@ def search(field: str, value: str):
 
 
 @app.command()
-def view(model_path: Path, diff_with: Path = None):
+def view(model_path: Path, diff_with: Path = None, calc_fp: bool = False, calc_er: bool = False):
     """
     查看模型信息
     :param model_path: 模型路径
@@ -147,9 +148,10 @@ def view(model_path: Path, diff_with: Path = None):
     model = Model(model_path)
     if diff_with:
         target_model = Model(diff_with)
-        (target_model - model).view_gui()
+        view_model(target_model - model,calc_fp,calc_er)
     else:
-        model.view_gui()
+        view_model(model, calc_fp, calc_er)
+
 
 @app.command()
 def compute(

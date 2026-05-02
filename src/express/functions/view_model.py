@@ -1,8 +1,8 @@
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, PreTrainedModel
 from textual.app import App, ComposeResult
 from textual.widgets import Tree, Header, DataTable, Footer, TabbedContent, TabPane, Static
 
+from express.base.model import Model
 from express.math.SVDAnalyzer import SVDAnalyzer
 
 
@@ -96,7 +96,7 @@ class UnifiedInspector(App):
         yield Footer()
 
 
-def pre_analyze_model(state_dict):
+def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
     """单线程顺序计算，物理内存/显存友好型"""
     results = {}
     for k, v in tqdm(state_dict.items(), desc="Analyzing Layers"):
@@ -106,18 +106,13 @@ def pre_analyze_model(state_dict):
             continue
         results[k] = {
             "shape": list(v.shape),
-            "fp": SVDAnalyzer.get_svd_fingerprint(v),
-            "er": SVDAnalyzer.get_effective_rank(v)
+            "fp": '' if not calc_fp else SVDAnalyzer.get_svd_fingerprint(v),
+            "er": 0.0 if not calc_er else SVDAnalyzer.get_effective_rank(v)
         }
     return results
 
 
-def view_model(model: PreTrainedModel, model_path: str):
-    state_dict = model.state_dict()
-    data = pre_analyze_model(state_dict)
-    UnifiedInspector(model_path, data).run()
-
-
-if __name__ == '__main__':
-    model_path = '/models/HIVE0.5-6B-1115-sft'
-    view_model(AutoModelForCausalLM.from_pretrained(model_path), model_path)
+def view_model(model: Model, calc_fp=False, calc_er=False):
+    state_dict = model.model.state_dict()
+    data = pre_analyze_model(state_dict, calc_fp, calc_er)
+    UnifiedInspector(model.path.__str__(), data).run()

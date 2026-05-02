@@ -13,14 +13,13 @@ import torch
 from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, PreTrainedModel, AutoTokenizer
+from transformers import PreTrainedModel, AutoTokenizer, AutoModel
 
 from express import console
 from express.base.data import from_torrent, Torrent, get_torrent
 from express.base.file import generate_index, FolderIndex
 from rich.pretty import Pretty
 
-from express.functions.view_model import view_model
 
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 MODEL_INDEX_FILE_NAME = os.getenv("MODEL_INDEX_FILE_NAME", 'express-index.json')
@@ -158,7 +157,7 @@ class Model:
     def _load(self, device: str = None, **kwargs) -> PreTrainedModel:
         """
         加载并返回真正的 PreTrainedModel 实例
-        等价于return AutoModelForCausalLM.from_pretrained(...)
+        等价于return AutoModel.from_pretrained(...)
         """
         if self._model_instance is None:
             console.print(f"Loading weights from {self.path}")
@@ -170,10 +169,10 @@ class Model:
             }
             if has_accelerate:
                 load_params["device_map"] = "auto"
-                self._model_instance = AutoModelForCausalLM.from_pretrained(**load_params)
+                self._model_instance = AutoModel.from_pretrained(**load_params)
             else:
                 console.print(f"Accelerate not found. Falling back to single device: {device}")
-                self._model_instance = AutoModelForCausalLM.from_pretrained(**load_params).to(device)
+                self._model_instance = AutoModel.from_pretrained(**load_params).to(device)
         return self._model_instance
 
     def _save(self, instance: PreTrainedModel, suffix: str = "_output") -> "Model":
@@ -250,10 +249,6 @@ class Model:
         metadata_path = self.path / self.metadata_file_name
         if metadata_path.exists():
             metadata_path.unlink()
-
-    def view_gui(self):
-        view_model(self.model, self.path.__str__())
-
 
 def get_metadata(torrent: Torrent) -> Metadata:
     metadata: Metadata = from_torrent(torrent, Metadata)
