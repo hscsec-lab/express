@@ -4,11 +4,10 @@ from pathlib import Path
 from typing import Any, Generator
 
 from rich.text import Text
-from simple_file_checksum import get_checksum
 
 from express import console
 from express.base.client import is_remote_file_exists, Remote
-from express.base.file import FileMetadata
+from express.base.file import FileMetadata, fast_checksum
 from express.base.model import Model, MODEL_INDEX_FILE_NAME
 from express.base.s3 import ProgressPercentage, DownloadProgressSimple
 
@@ -23,7 +22,7 @@ def push_chunk(remote: Remote, local_file_path: Path,remote_file_name: str = Non
     :return:
     """
     if not remote_file_name:
-        remote_file_name = get_checksum(local_file_path)
+        remote_file_name = fast_checksum(local_file_path)
 
     if is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name) and not force:
         console.print(Text.assemble("✓ Skip ", (remote_file_name, "dim"), ": already exists"))
@@ -52,7 +51,7 @@ def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path, fil
     """Downloads a file from S3, skipping or aborting based on local checksum validation."""
     if local_file_path.exists():
         if file_checksum_sha256:
-            local_checksum = get_checksum(local_file_path)
+            local_checksum = fast_checksum(local_file_path)
             if local_checksum == file_checksum_sha256:
                 console.print(Text.assemble("✓ Skip ", (str(local_file_path), "dim"), ": already exists"))
                 return local_file_path

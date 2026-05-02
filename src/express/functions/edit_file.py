@@ -5,12 +5,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from simple_file_checksum import get_checksum
 from express import console
 
 from express.base.client import Remote
 from express.base.data import Torrent
-from express.base.file import FolderIndex, get_remote_chunk_metadata_from_index
+from express.base.file import FolderIndex, get_remote_chunk_metadata_from_index, fast_checksum
 from express.base.model import MODEL_INDEX_FILE_NAME
 from express.base.remote import pull_index_with_torrent
 from express.base.transfer import push_chunk, pull_file
@@ -60,7 +59,7 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
                         f.flush()
                         os.fsync(f.fileno())
             finally:
-                remote_chunk_hash = get_checksum(tmp_file.name)
+                remote_chunk_hash = fast_checksum(tmp_file.name)
                 if remote_chunk_metadata.file_checksum_sha256 != remote_chunk_hash:
                     console.print(f"File {remote_file_name} has been modified, syncing changes...")
                     remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # 更新索引文件中的hash值
