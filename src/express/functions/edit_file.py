@@ -59,7 +59,7 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
                         f.flush()
                         os.fsync(f.fileno())
             finally:
-                remote_chunk_hash = fast_checksum(tmp_file.name)
+                remote_chunk_hash = fast_checksum(Path(tmp_file.name))
                 if remote_chunk_metadata.file_checksum_sha256 != remote_chunk_hash:
                     console.print(f"File {remote_file_name} has been modified, syncing changes...")
                     remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # 更新索引文件中的hash值
@@ -71,7 +71,3 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
                     console.print(f"File has been synced successfully.")
                 else:
                     console.print(f"No changes detected in {remote_file_name}, skipping sync.")
-if __name__ == '__main__':
-    torrent = Torrent(
-        "789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a505560796a9eb1ae819e9993be522d0075cd26a5")
-    edit_file(Remote(), torrent, "config.json")
