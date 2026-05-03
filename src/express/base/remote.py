@@ -78,7 +78,7 @@ def pull(torrent: Torrent, remote: Remote, force: bool = False) -> Model:
         local_model_path.mkdir(parents=True, exist_ok=True)
 
     model = Model(path=local_model_path)
-    return pull_model(torrent, remote, model, force)
+    return pull_model(torrent, remote, model, force=force)
 
 def ls(remote: Remote, torrent: bool = False) -> None:
     """Prints the list of remote models to the console."""

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 
 import typer
 
@@ -39,7 +39,7 @@ def push(model_path: Path):
 
 
 @app.command()
-def pull(torrent: str, force=False):
+def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="是否强制拉取")):
     """
     拉取模型
     :param torrent:
@@ -117,7 +117,7 @@ def clear(model_path: Path):
 
 
 @app.command()
-def ls(torrent: bool = False):
+def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="是否显示torrent")):
     """
     获取远程模型列表
     :param torrent:
@@ -138,11 +138,18 @@ def search(field: str, value: str):
 
 
 @app.command()
-def view(model_path: Path, diff_with: Path = None, calc_fp: bool = False, calc_er: bool = False):
+def view(
+        model_path: Path = typer.Argument(..., help="模型路径"),
+        diff_with: Optional[Path] = typer.Option(None, "--diff", "-d", help="对比路径"),
+        calc_fp: bool = typer.Option(False, "--fp", help="是否计算 FP"),
+        calc_er: bool = typer.Option(False, "--er", help="是否计算 ER"),
+):
     """
     查看模型信息
     :param model_path: 模型路径
     :param diff_with: 对比差异的模型路径，逻辑为Model(diff_with) - Model(model_path)
+    :param calc_fp:
+    :param calc_er:
     :return:
     """
     model = Model(model_path)
