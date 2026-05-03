@@ -66,7 +66,7 @@ def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path,
             else:
                 console.print(Text.assemble(
                     "❓ Notice ", (f"{local_file_path.name}", "bold yellow"),
-                    ": local hash mismatch. ",
+                    ": local hash mismatch (May mismatch express version). ",
                     ("Algorithm mismatch or partial file?", "italic dim")
                 ))
                 console.print(Text.assemble(
