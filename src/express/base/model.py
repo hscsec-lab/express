@@ -100,34 +100,27 @@ class Model:
 
         assert self.path.is_dir(), f"{self.path} must be directory."
 
+    @staticmethod
+    def _compute_tensors(sd_a, sd_b, op_func):
+        with torch.no_grad():
+            common_keys = set(sd_a.keys()) & set(sd_b.keys())
+            for key in common_keys:
+                if sd_a[key].shape == sd_b[key].shape:
+                    sd_a[key] = op_func(sd_a[key], sd_b[key].to(sd_a[key].device))
+        return sd_a
+
     def _apply_op(self, other, op_func) -> "Model":
-        """
-        通用操作函数：遍历两个模型的 state_dict 并执行 op_func 并将结果赋值到第一个模型中
-        """
-        # 确保两个模型都已加载
         model_a = self.model
+        sd_a = model_a.state_dict()
 
-        sd_a = model_a.state_dict()  # 虽然后面会直接把运算结果覆盖到sd_a，但是sd_a不会进行保存，为了节省资源，我们直接在原模型权重上进行操作
         if isinstance(other, Model):
-            # 与模型计算
-            sd_b = other.model.state_dict()
-            with torch.no_grad():
-                for key in tqdm(sd_a.keys(), desc="Model Op"):
-                    if key in sd_b:
-                        # 确保维度一致
-                        if sd_a[key].shape == sd_b[key].shape:
-                            # 执行运算：tensor + tensor
-                            sd_a[key] = op_func(sd_a[key], sd_b[key].to(sd_a[key].device))
-
+            sd_a = self._compute_tensors(sd_a, other.model.state_dict(), op_func)
         elif isinstance(other, (int, float)):
-            # 与标量计算
             with torch.no_grad():
-                for key in sd_a.keys():
-                    # 执行运算：tensor + scalar (Torch 会自动处理逐元素运算)
-                    sd_a[key] = op_func(sd_a[key], other)
-
+                sd_a = {k: op_func(v, other) for k, v in sd_a.items()}
         else:
-            raise TypeError(f"Unsupported type: {type(other)}. Must be Model, int, or float.")
+            raise TypeError(f"Unsupported type: {type(other)}")
+
         model_a.load_state_dict(sd_a)
         return self._save(model_a)
 
