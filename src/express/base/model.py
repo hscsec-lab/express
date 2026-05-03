@@ -6,20 +6,21 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Type
 
 import rich
 import torch
 from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 from tqdm import tqdm
-from transformers import PreTrainedModel, AutoTokenizer, AutoModel
+from transformers import PreTrainedModel, AutoTokenizer, AutoModel, Qwen3_5MoeForConditionalGeneration, \
+    AutoModelForCausalLM, AutoConfig, AutoModelForImageTextToText, AutoModelForSeq2SeqLM, \
+    AutoModelForAudioFrameClassification
 
 from express import console
 from express.base.data import from_torrent, Torrent, get_torrent
 from express.base.file import generate_index, FolderIndex
 from rich.pretty import Pretty
-
 
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 MODEL_INDEX_FILE_NAME = os.getenv("MODEL_INDEX_FILE_NAME", 'express-index.json')
@@ -154,27 +155,42 @@ class Model:
         # 这是处理 scalar / model 的情况，逻辑稍有不同
         return self._apply_op(other, lambda a, b: b / (a + 1e-12))
 
-    def _load(self, device: str = None, **kwargs) -> PreTrainedModel:
-        """
-        加载并返回真正的 PreTrainedModel 实例
-        等价于return AutoModel.from_pretrained(...)
-        """
-        if self._model_instance is None:
-            console.print(f"Loading weights from {self.path}")
-            has_accelerate = importlib.util.find_spec("accelerate") is not None
-            if not device:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-            load_params = {
-                "pretrained_model_name_or_path": self.path
-            }
-            if has_accelerate:
-                load_params["device_map"] = "auto"
-                self._model_instance = AutoModel.from_pretrained(**load_params)
-            else:
-                console.print(f"Accelerate not found. Falling back to single device: {device}")
-                self._model_instance = AutoModel.from_pretrained(**load_params).to(device)
-        return self._model_instance
+    def _load(self, device: Optional[str] = None, **kwargs) -> PreTrainedModel:
+        if self._model_instance is not None:
+            return self._model_instance
 
+        config = AutoConfig.from_pretrained(self.path, trust_remote_code=True)
+
+        # 自动分发映射表
+        dispatch_map = [
+            (AutoModelForImageTextToText, "vision-language"),
+            (AutoModelForSeq2SeqLM, "audio-seq2seq/omni"),
+            (AutoModelForAudioFrameClassification, "audio-classification"),
+            (AutoModelForCausalLM, "causal-llm")
+        ]
+
+        load_class = AutoModelForCausalLM
+        for cls, label in dispatch_map:
+            if type(config) in cls._model_mapping.keys():
+                load_class = cls
+                break
+
+        load_params = {
+            "pretrained_model_name_or_path": self.path,
+            "config": config,
+            "trust_remote_code": True,
+            "torch_dtype": "auto",
+            **kwargs
+        }
+
+        if importlib.util.find_spec("accelerate"):
+            load_params.setdefault("device_map", "auto")
+            self._model_instance = load_class.from_pretrained(**load_params)
+        else:
+            device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+            self._model_instance = load_class.from_pretrained(**load_params).to(device)
+
+        return self._model_instance
     def _save(self, instance: PreTrainedModel, suffix: str = "_output") -> "Model":
         """
         Save Model instance to a new temporary directory and return a new Model object pointing to it.
@@ -250,6 +266,7 @@ class Model:
         metadata_path = self.path / self.metadata_file_name
         if metadata_path.exists():
             metadata_path.unlink()
+
 
 def get_metadata(torrent: Torrent) -> Metadata:
     metadata: Metadata = from_torrent(torrent, Metadata)
