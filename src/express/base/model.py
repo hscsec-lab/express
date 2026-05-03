@@ -185,12 +185,17 @@ class Model:
 
         if importlib.util.find_spec("accelerate"):
             load_params.setdefault("device_map", "auto")
-            self._model_instance = load_class.from_pretrained(**load_params)
+            self._model_instance = load_class.from_pretrained(**load_params,
+                                                              offload_folder=os.getenv("OFFLOAD_FOLDER", "/tmp/.cache"))
         else:
             device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-            self._model_instance = load_class.from_pretrained(**load_params).to(device)
+            self._model_instance = load_class.from_pretrained(**load_params,
+                                                              offload_folder=os.getenv("OFFLOAD_FOLDER",
+                                                                                       "/tmp/.cache"), ).to(
+                device)
 
         return self._model_instance
+
     def _save(self, instance: PreTrainedModel, suffix: str = "_output") -> "Model":
         """
         Save Model instance to a new temporary directory and return a new Model object pointing to it.
