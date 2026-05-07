@@ -1,4 +1,4 @@
-# Express: Swiss Army Knife for Transformers Management
+# Express: Visual Analysis & Distribution Toolkit for Transformers
 
 `express` is a terminal-based toolkit designed for visual analysis, algebraic computation, and private distribution of Transformer models.
 
