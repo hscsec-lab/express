@@ -23,6 +23,7 @@ express view <your_model_path>
 ```shell
 express view <your_model_path>
 ```
+![express_view_3.svg](statics/express_view_3.svg)
 
 进行模型逐矩阵的计算
 支持Tensor与Tensor、Tensor与标量的计算，并支持乘法交换律
