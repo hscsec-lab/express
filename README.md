@@ -1,29 +1,52 @@
-# Express
+# 项目介绍
 
-Express是一个管理模型的工具
+express是一个基于终端的可视化分析、分发、管理transformers的工具，支持于私有的模型管理
 
 ## 快速开始
 
+在开始前请保证您的设备上有足够的显存在GPU上加载模型
+
 ```shell
-pip install express --index-url http://pypi.dog.cat/gitlab/dev/+simple/ --trusted-host pypi.dog.cat
+uv pip install .
 ```
 
-创建模型(若已有模型可跳过这一步)
+### 预览模型的信息
 
 ```shell
-$ express create model_name #model_name指的是存放模型文件的文件夹，通常我们认为模型文件夹名应与模型名相同
-Created model model_name
-$ ls model_name
-index.json  metadata.json
+express view <your_model_path>
+```
+![express_view_1.svg](statics/express_view_1.svg)
+
+![express_view_2.svg](statics/express_view_2.svg)
+
+或预览时计算逐Tensor的有效秩与奇异值分布图等信息
+```shell
+express view <your_model_path>
 ```
 
-上传模型
+进行模型逐矩阵的计算
+支持Tensor与Tensor、Tensor与标量的计算，并支持乘法交换律
+
+> EG: 两个模型的加权平均合并
+```shell
+express compute A=/models/Qwen3.5-35B-A3B-rl-1 B=/model/Qwen3.5-35B-A3B-rl-2 "(1.2*A+0.8*B)/2"
+```
+### 模型分发与管理
+
+请先在环境变量中配置存储桶介质的信息
 
 ```shell
-$ export S3_AK=XXX
-$ export S3_SK=XXX
-$ export S3_BUCKET=XXX
-$ export S3_ENDPOINT=XXX
+export S3_AK=
+export S3_SK=
+export S3_BUCKET=
+export S3_ENDPOINT=
+export LOCAL_WORKDIR=<不设置的默认值为/models>
+
+```
+
+推送与拉取
+
+```shell
 $ express push model_name
 Uploading: metadata.json       [ 146.0 B]
 100.0% |████████████████████████████████████████████████████████████| 146.0 B/146.0 B [142.5 B/s]
@@ -32,11 +55,17 @@ Uploading: index.json          [ 338.0 B]
 推送完成，请妥善保存模型torrent: 789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a50556e7e4a6a4e3c98530b0056e427b6
 ```
 
+> torrent是模型的唯一索引，是模型的基础信息编码的来
+
+```shell
+express pull <your_torrent>
+```
+
 模型的torrent保存着模型的基础信息，作为存储桶级别的唯一索引
 
 查看模型信息
 ```shell
-$ express info 789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a50556e7e4a6a4e3c98530b0056e427b6
+$ express info <torrent>
 {
 │   'authors': 'example_authors',
 │   'emails': 'human@human.com',
@@ -51,34 +80,7 @@ $ express info 789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a
 下载模型
 
 ```shell
-$ express pull 789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a50556e7e4a6a4e3c98530b0056e427b6
+$ express pull <torrent>
 Downloading: model_name/index.json 338.0 B [295.0 B/s]
 ✓ Skip model_name/metadata.json: already exists
-```
-
-## 存储模式
-
-```mermaid
-flowchart TD
-    A[模型目录] --> B[metadata.json]
-    B --> C[Express CLI]
-    C --> D[生成唯一 Torrent]
-    D --> E["存储介质 (e.g. S3)"]
-    
-    subgraph "存储层"
-        E --> F["唯一文件片 (chunked objects)"]
-        D -->|保存| G["Torrent Index (e.g. .torrent.json 或元数据锚点)"]
-        G --> F
-    end
-
-    style A fill:#e6f7ff,stroke:#1890ff
-    style D fill:#ffe58f,stroke:#faad14
-    style E fill:#f6ffed,stroke:#52c41a
-    style F fill:#f9f0ff,stroke:#722ed1
-    style G fill:#fff7e6,stroke:#fa8c16
-```
-
-## 设置工作目录
-```shell
-export LOCAL_WORKDIR=XXX
 ```
