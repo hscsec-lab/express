@@ -34,6 +34,8 @@ export LOCAL_WORKDIR="/models" # Optional
 ### 1. Deep Model Inspection (View)
 *Ensure your GPU has enough VRAM before running.*
 
+![express_view_0.gif](statics/express_view_0.gif)
+
 - **Standard View**: Basic structure and metadata.
 - **Advanced Diagnostics**: Calculate mathematical distributions.
 ```shell
