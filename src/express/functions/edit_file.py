@@ -14,7 +14,7 @@ from express.base.model import MODEL_INDEX_FILE_NAME
 from express.base.remote import pull_index_with_torrent
 from express.base.transfer import push_chunk, pull_file
 
-def edit_local_file(f):
+def open_editor(f):
     """
     Edit a local file using the system's default editor.
     :param f:
@@ -34,7 +34,7 @@ def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
     :return:
     """
     with open_remote_file_rw(remote, torrent, remote_file_name) as f:
-        edit_local_file(f)
+        open_editor(f)
 
 @contextmanager
 def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str):

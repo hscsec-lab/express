@@ -39,7 +39,7 @@ def push(model_path: Path):
 
 
 @app.command()
-def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="是否强制拉取")):
+def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="Automatically overwrite local files when local files and cloud hashes do not match.")):
     """
     拉取模型
     :param torrent:
@@ -117,7 +117,7 @@ def clear(model_path: Path):
 
 
 @app.command()
-def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="是否显示torrent")):
+def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="Display the torrent list")):
     """
     获取远程模型列表
     :param torrent:
@@ -139,10 +139,10 @@ def search(field: str, value: str):
 
 @app.command()
 def view(
-        model_path: Path = typer.Argument(..., help="模型路径"),
-        diff_with: Optional[Path] = typer.Option(None, "--diff", "-d", help="对比路径"),
-        calc_fp: bool = typer.Option(False, "--fp", help="是否计算 FP"),
-        calc_er: bool = typer.Option(False, "--er", help="是否计算 ER"),
+        model_path: Path = typer.Argument(..., help="Path to the model file"),
+        diff_with: Optional[Path] = typer.Option(None, "--diff", "-d", help="Path to the model for comparison"),
+        calc_fp: bool = typer.Option(False, "--fp", help="Whether to calculate the Singular Value Fingerprint (FP)"),
+        calc_er: bool = typer.Option(False, "--er", help="Whether to calculate the Effective Rank (ER)"),
 ):
     """
     查看模型信息
@@ -162,15 +162,17 @@ def view(
 
 @app.command()
 def compute(
-        args: List[str] = typer.Argument(..., help="格式: 别名=路径 [别名=路径 ...] '表达式'")
+        args: List[str] = typer.Argument(
+            ...,
+            help="Format: alias=path [alias=path ...] 'expression' (e.g., A=path/to/m1 B=path/to/m2 'A+B')"
+        )
 ):
     """
     支持多模型复杂的四则运算。
     示例: A=m1.bin B=m2.bin "(A + B) * 0.5"
     """
     if len(args) < 2:
-        raise typer.BadParameter("需提供至少一个模型映射和计算表达式。")
-
+        raise typer.BadParameter("At least one model mapping and a calculation expression must be provided.")
     mappings, expression = args[:-1], args[-1]
 
     model_map = {

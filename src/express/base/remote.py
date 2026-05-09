@@ -37,7 +37,7 @@ def push(model: Model, remote: Remote) -> None:
     for file_metadata in folder_index:
         push_file(model, remote, file_metadata, model_metadata_torrent)
 
-    print(f"Push completed. Please keep your model torrent safe: {model_metadata_torrent}")
+    print(f"Push completed. Model torrent: {model_metadata_torrent}")
 
 def pull_model_with_index(index: dict, remote: Remote, save_path: Path, force: bool) -> Model:
     """Pulls all model files defined in the index dictionary to the specified path."""

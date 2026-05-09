@@ -15,7 +15,7 @@ from pydantic_core.core_schema import ValidationInfo
 from tqdm import tqdm
 from transformers import PreTrainedModel, AutoTokenizer, AutoModel, Qwen3_5MoeForConditionalGeneration, \
     AutoModelForCausalLM, AutoConfig, AutoModelForImageTextToText, AutoModelForSeq2SeqLM, \
-    AutoModelForAudioFrameClassification
+    AutoModelForAudioFrameClassification, PretrainedConfig
 
 from express import console
 from express.base.data import from_torrent, Torrent, get_torrent
@@ -149,12 +149,29 @@ class Model:
         return self._apply_op(other, lambda a, b: b / (a + 1e-12))
 
     def _load(self, device: Optional[str] = None, **kwargs) -> PreTrainedModel:
+        """
+        Main entry point for loading the model with caching mechanism and automated dispatching.
+        """
         if self._model_instance is not None:
             return self._model_instance
 
         config = AutoConfig.from_pretrained(self.path, trust_remote_code=True)
 
-        # 自动分发映射表
+        load_class = self._determine_load_class(config)
+        load_params = self._prepare_load_params(config, **kwargs)
+
+        self._model_instance = self._execute_model_loading(
+            load_class,
+            load_params,
+            device
+        )
+
+        return self._model_instance
+
+    def _determine_load_class(self, config: PretrainedConfig) -> type:
+        """
+        Determines the appropriate AutoModel class based on the provided configuration mapping.
+        """
         dispatch_map = [
             (AutoModelForImageTextToText, "vision-language"),
             (AutoModelForSeq2SeqLM, "audio-seq2seq/omni"),
@@ -162,13 +179,16 @@ class Model:
             (AutoModelForCausalLM, "causal-llm")
         ]
 
-        load_class = AutoModelForCausalLM
         for cls, label in dispatch_map:
             if type(config) in cls._model_mapping.keys():
-                load_class = cls
-                break
+                return cls
+        return AutoModelForCausalLM
 
-        load_params = {
+    def _prepare_load_params(self, config: PretrainedConfig, **kwargs) -> dict:
+        """
+        Constructs the standard parameter dictionary for the from_pretrained call.
+        """
+        return {
             "pretrained_model_name_or_path": self.path,
             "config": config,
             "trust_remote_code": True,
@@ -176,18 +196,29 @@ class Model:
             **kwargs
         }
 
+    def _execute_model_loading(
+            self,
+            load_class: type,
+            load_params: dict,
+            device: Optional[str]
+    ) -> PreTrainedModel:
+        """
+        Executes the actual model loading logic, handling accelerate integration or manual device placement.
+        """
+        offload_folder = os.getenv("OFFLOAD_FOLDER", "/tmp/.cache")
+
         if importlib.util.find_spec("accelerate"):
             load_params.setdefault("device_map", "auto")
-            self._model_instance = load_class.from_pretrained(**load_params,
-                                                              offload_folder=os.getenv("OFFLOAD_FOLDER", "/tmp/.cache"))
-        else:
-            device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-            self._model_instance = load_class.from_pretrained(**load_params,
-                                                              offload_folder=os.getenv("OFFLOAD_FOLDER",
-                                                                                       "/tmp/.cache"), ).to(
-                device)
+            return load_class.from_pretrained(
+                **load_params,
+                offload_folder=offload_folder
+            )
 
-        return self._model_instance
+        target_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        return load_class.from_pretrained(
+            **load_params,
+            offload_folder=offload_folder
+        ).to(target_device)
 
     def _save(self, instance: PreTrainedModel, suffix: str = "_output") -> "Model":
         """
