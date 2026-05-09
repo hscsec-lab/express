@@ -5,16 +5,25 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from simple_file_checksum import get_checksum
 from express import console
 
 from express.base.client import Remote
 from express.base.data import Torrent
-from express.base.file import FolderIndex, get_remote_chunk_metadata_from_index
+from express.base.file import FolderIndex, get_remote_chunk_metadata_from_index, fast_checksum
 from express.base.model import MODEL_INDEX_FILE_NAME
 from express.base.remote import pull_index_with_torrent
 from express.base.transfer import push_chunk, pull_file
 
+def edit_local_file(f):
+    """
+    Edit a local file using the system's default editor.
+    :param f:
+    :return:
+    """
+    editor_cmd = os.getenv('EDITOR', 'vim')
+    cmd = shlex.split(editor_cmd)
+    cmd.append(f.name)
+    subprocess.run(cmd, check=True)
 
 def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
     """
@@ -25,13 +34,7 @@ def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
     :return:
     """
     with open_remote_file_rw(remote, torrent, remote_file_name) as f:
-        editor_cmd = os.getenv('EDITOR', 'vim')
-        cmd = shlex.split(editor_cmd)
-        cmd.append(f.name)
-        try:
-            subprocess.run(cmd, check=True)
-        except FileNotFoundError:
-            print(f"错误：找不到编辑器 '{cmd[0]}'")
+        edit_local_file(f)
 
 @contextmanager
 def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str):
@@ -56,7 +59,7 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
                         f.flush()
                         os.fsync(f.fileno())
             finally:
-                remote_chunk_hash = get_checksum(tmp_file.name)
+                remote_chunk_hash = fast_checksum(Path(tmp_file.name))
                 if remote_chunk_metadata.file_checksum_sha256 != remote_chunk_hash:
                     console.print(f"File {remote_file_name} has been modified, syncing changes...")
                     remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # 更新索引文件中的hash值
@@ -68,7 +71,3 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
                     console.print(f"File has been synced successfully.")
                 else:
                     console.print(f"No changes detected in {remote_file_name}, skipping sync.")
-if __name__ == '__main__':
-    torrent = Torrent(
-        "789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a505560796a9eb1ae819e9993be522d0075cd26a5")
-    edit_file(Remote(), torrent, "config.json")

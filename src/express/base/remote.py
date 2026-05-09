@@ -37,7 +37,7 @@ def push(model: Model, remote: Remote) -> None:
     for file_metadata in folder_index:
         push_file(model, remote, file_metadata, model_metadata_torrent)
 
-    print(f"推送完成，请妥善保存模型torrent: {model_metadata_torrent}")
+    print(f"Push completed. Please keep your model torrent safe: {model_metadata_torrent}")
 
 def pull_model_with_index(index: dict, remote: Remote, save_path: Path, force: bool) -> Model:
     """Pulls all model files defined in the index dictionary to the specified path."""
@@ -78,7 +78,7 @@ def pull(torrent: Torrent, remote: Remote, force: bool = False) -> Model:
         local_model_path.mkdir(parents=True, exist_ok=True)
 
     model = Model(path=local_model_path)
-    return pull_model(torrent, remote, model, force)
+    return pull_model(torrent, remote, model, force=force)
 
 def ls(remote: Remote, torrent: bool = False) -> None:
     """Prints the list of remote models to the console."""

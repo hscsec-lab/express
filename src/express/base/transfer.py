@@ -4,11 +4,10 @@ from pathlib import Path
 from typing import Any, Generator
 
 from rich.text import Text
-from simple_file_checksum import get_checksum
 
 from express import console
 from express.base.client import is_remote_file_exists, Remote
-from express.base.file import FileMetadata
+from express.base.file import FileMetadata, fast_checksum
 from express.base.model import Model, MODEL_INDEX_FILE_NAME
 from express.base.s3 import ProgressPercentage, DownloadProgressSimple
 
@@ -23,7 +22,7 @@ def push_chunk(remote: Remote, local_file_path: Path,remote_file_name: str = Non
     :return:
     """
     if not remote_file_name:
-        remote_file_name = get_checksum(local_file_path)
+        remote_file_name = fast_checksum(local_file_path)
 
     if is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name) and not force:
         console.print(Text.assemble("✓ Skip ", (remote_file_name, "dim"), ": already exists"))
@@ -47,23 +46,35 @@ def push_file(model: Model, remote: Remote, file_metadata: FileMetadata, model_m
     push_chunk(remote, local_file_path, remote_file_name)
 
 
-def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path, file_checksum_sha256: str | None,
-              force: bool = False) -> Path:
-    """Downloads a file from S3, skipping or aborting based on local checksum validation."""
+def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path,
+              file_checksum_sha256: str | None, force: bool = False) -> Path:
+    """Downloads a file from S3, with graceful handling of checksum algorithm transitions."""
+
     if local_file_path.exists():
         if file_checksum_sha256:
-            local_checksum = get_checksum(local_file_path)
-            if local_checksum == file_checksum_sha256:
-                console.print(Text.assemble("✓ Skip ", (str(local_file_path), "dim"), ": already exists"))
-                return local_file_path
-            else:
-                if force:
-                    console.print(Text.assemble("⚠️  Overwriting ", str(local_file_path), ": checksum mismatch"))
-                else:
-                    console.print(Text.assemble("✗ Skip ", str(local_file_path),
-                                                ": checksum mismatch (use --force to overwrite)"))
-                    return local_file_path
+            # 使用新的快速校验算法
+            current_local_hash = fast_checksum(local_file_path)
 
+            if current_local_hash == file_checksum_sha256:
+                console.print(Text.assemble("✓ Match ", (str(local_file_path), "dim"), " (fast-check)"))
+                return local_file_path
+
+            # 当 Hash 不匹配时的处理
+            print(f"force: {force}")
+            if force:
+                console.print(Text.assemble("🔄 Re-syncing ", str(local_file_path), " due to hash update..."))
+            else:
+                console.print(Text.assemble(
+                    "❓ Notice ", (f"{local_file_path.name}", "bold yellow"),
+                    ": local hash mismatch (May mismatch express version). ",
+                    ("Algorithm mismatch or partial file?", "italic dim")
+                ))
+                console.print(Text.assemble(
+                    "   └─ ", ("Use --force to sync with Express-Checksum index.", "dim")
+                ))
+            return local_file_path
+
+    # 执行下载逻辑
     local_file_path.parent.mkdir(parents=True, exist_ok=True)
     remote.s3_client.download_file(
         remote.s3_bucket,
@@ -71,8 +82,9 @@ def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path, fil
         local_file_path,
         Callback=DownloadProgressSimple(str(local_file_path.name))
     )
-    return local_file_path
 
+    # 下载后建议立即用新算法验证并存入本地缓存（如果以后有本地 metadata 库的话）
+    return local_file_path
 @contextmanager
 def open_remote_file(remote: Remote, remote_file_path: Path, local_file_path: Path, file_checksum_sha256: str | None,
                      force: bool = False) -> Generator[BufferedReader, Any, None]:
