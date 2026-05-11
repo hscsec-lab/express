@@ -137,11 +137,11 @@ def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
     """
     results = {}
     for k, v in tqdm(state_dict.items(), desc="Analyzing Layers"):
-        # 获取基础信息（即使在 meta device 上，numel 和 shape 也是可读的）
+        # Retrieve basic information (numel and shape are readable even on meta devices)
         num_params = v.numel()
         shape = list(v.shape)
 
-        # 初始化结果
+        # Initialize results
         results[k] = {
             "params": num_params,
             "shape": shape,
@@ -149,15 +149,15 @@ def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
             "er": 0.0
         }
 
-        # 只有不在 meta 设备上且需要计算时才进行 SVD
-        # 如果在 meta 设备上，SVD 无法运行，直接跳过计算逻辑但保留条目
+        # Perform SVD only when not on meta devices and calculation is required
+        # If on meta devices, SVD cannot run, skip calculation logic but retain entries
         if not v.is_meta:
             if calc_fp:
                 results[k]["fp"] = SVDAnalyzer.get_svd_fingerprint(v)
             if calc_er:
                 results[k]["er"] = SVDAnalyzer.get_effective_rank(v)
         else:
-            # 可选：在 FP 处标注该层被 offload 了
+            # Optional: Mark the layer as offloaded at FP
             results[k]["fp"] = "[Offloaded]"
 
     return results

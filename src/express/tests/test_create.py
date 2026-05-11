@@ -1,1 +1,2 @@
-# 刷commit(上游需要新commit才能拉取)
+# Commit refresh (upstream requires a new commit to pull)
+

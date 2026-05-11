@@ -52,14 +52,14 @@ def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path,
 
     if local_file_path.exists():
         if file_checksum_sha256:
-            # 使用新的快速校验算法
+            # Use the new fast checksum algorithm
             current_local_hash = fast_checksum(local_file_path)
 
             if current_local_hash == file_checksum_sha256:
                 console.print(Text.assemble("✓ Match ", (str(local_file_path), "dim"), " (fast-check)"))
                 return local_file_path
 
-            # 当 Hash 不匹配时的处理
+            # Handling when Hash does not match
             print(f"force: {force}")
             if force:
                 console.print(Text.assemble("🔄 Re-syncing ", str(local_file_path), " due to hash update..."))

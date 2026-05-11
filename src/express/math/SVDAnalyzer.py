@@ -13,7 +13,7 @@ class SVDAnalyzer:
     @classmethod
     def get_svd_fingerprint(cls, tensor: torch.Tensor, bins: int = 10) -> str:
         if tensor.ndim < 2: return ""
-        # 统一转为 float32 的 numpy，解决 BF16 报错并适配 joblib 缓存
+        # Convert to float32 numpy to resolve BF16 errors and adapt to joblib caching
         matrix_np = tensor.detach().cpu().contiguous().to(torch.float32).numpy()
         return cls._cached_fingerprint_calc(matrix_np, bins)
 
@@ -74,43 +74,43 @@ class SVDAnalyzer:
 class TestSVDAnalyzer(unittest.TestCase):
 
     def test_full_rank_matrix(self):
-        """测试全秩矩阵（知识分布均匀）"""
-        # 单位矩阵的奇异值全是 1
+        """Test full-rank matrix (even distribution of knowledge)"""
+        # Singular values of an identity matrix are all 1
         tensor = torch.eye(100)
         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
         er = SVDAnalyzer.get_effective_rank(tensor)
 
         print(f"\nFull Rank [Eye]: {fingerprint} ER(Effective Rank): {er:.2f}")
-        # 理想状态下，全秩矩阵的指纹应该是满格的 [██████████]
+        # Ideally, the fingerprint of a full-rank matrix should be fully filled [██████████]
         self.assertIn("█", fingerprint)
         self.assertAlmostEqual(er, 100.0, delta=1.0)
 
     def test_low_rank_matrix(self):
-        """测试低秩矩阵（特征坍缩）"""
-        # 构造一个 100x100 但秩仅为 1 的矩阵
+        """Test low-rank matrix (feature collapse)"""
+        # Construct a 100x100 matrix with a rank of only 1
         tensor = torch.ones((100, 100))
         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
         er = SVDAnalyzer.get_effective_rank(tensor)
 
         print(f"Low Rank [Ones]: {fingerprint} ER: {er:.2f}")
-        # 秩为 1 的矩阵，除了第一格，后面应该基本是空的 [█         ]
+        # For a rank-1 matrix, only the first bin should be filled [█         ]
         self.assertTrue(fingerprint.startswith("[█"))
         self.assertLess(er, 5.0)
 
     def test_random_matrix(self):
-        """测试随机矩阵（模拟训练中的层）"""
+        """Test random matrix (simulating layers in training)"""
         tensor = torch.randn(100, 100)
         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
         er = SVDAnalyzer.get_effective_rank(tensor)
 
         print(f"Random Matrix:   {fingerprint} ER: {er:.2f}")
-        # 随机矩阵通常呈现平滑衰减
+        # Random matrices usually exhibit smooth decay
         self.assertIsInstance(fingerprint, str)
         self.assertTrue(er > 10.0)
 
     def test_high_dim_tensor(self):
-        """测试多维 Tensor（模拟 Conv2d 或线性层参数）"""
-        # 模拟 shape [out_channels, in_channels, k, k]
+        """Test high-dimensional Tensor (simulating Conv2d or linear layer parameters)"""
+        # Simulate shape [out_channels, in_channels, k, k]
         tensor = torch.randn(32, 64, 3, 3)
         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
 
@@ -118,8 +118,8 @@ class TestSVDAnalyzer(unittest.TestCase):
         self.assertEqual(len(fingerprint), 12)  # [ + 10 chars + ]
 
     def test_invalid_input(self):
-        """测试非法输入"""
-        # 1D tensor 没有奇异值概念
+        """Test invalid input"""
+        # 1D tensors do not have a concept of singular values
         tensor = torch.randn(10)
         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor)
         self.assertEqual(fingerprint, "")
