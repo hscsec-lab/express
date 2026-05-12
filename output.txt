@@ -1,0 +1,180 @@
+diff --git a/src/express/base/transfer.py b/src/express/base/transfer.py
+index f8e2513..2b373fc 100644
+--- a/src/express/base/transfer.py
++++ b/src/express/base/transfer.py
+@@ -52,14 +52,14 @@ def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path,
+ 
+     if local_file_path.exists():
+         if file_checksum_sha256:
+-            # Use the new fast checksum algorithm
+             current_local_hash = fast_checksum(local_file_path)
+ 
+             if current_local_hash == file_checksum_sha256:
+                 console.print(Text.assemble("✓ Match ", (str(local_file_path), "dim"), " (fast-check)"))
+                 return local_file_path
+ 
+-            # Handling when Hash does not match
++            # Handling when hash does not match
+             print(f"force: {force}")
+             if force:
+                 console.print(Text.assemble("🔄 Re-syncing ", str(local_file_path), " due to hash update..."))
+diff --git a/src/express/functions/edit_file.py b/src/express/functions/edit_file.py
+index 3f1e84c..24c52c9 100644
+--- a/src/express/functions/edit_file.py
++++ b/src/express/functions/edit_file.py
+@@ -27,10 +27,11 @@ def open_editor(f):
+ 
+ def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
+     """
+-    Use the CLI editing tool to edit files online. Only files that can be decoded as str are allowed to be edited.
++    Use the CLI editing tool to edit files online. Only files that can be decoded as str are allowed to be edited.
+     After editing, the file will be automatically uploaded and the hash value of the index file will be updated.
+     :param remote:
+     :param torrent:
+-    :param remote_file_name: Remote file name, must be a file that exists in the index file
++    :param remote_file_name: Remote file name, must be a file that exists in the index file
+     :return:
+     """
+     with open_remote_file_rw(remote, torrent, remote_file_name) as f:
+@@ -39,7 +40,7 @@ def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
+ @contextmanager
+ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str):
+     """
+-    Modify the target file and update the index file
++    Modify the target file and update the index file
+     :param remote:
+     :param torrent:
+     :param remote_file_name:
+@@ -62,12 +63,12 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
+                 remote_chunk_hash = fast_checksum(Path(tmp_file.name))
+                 if remote_chunk_metadata.file_checksum_sha256 != remote_chunk_hash:
+                     console.print(f"File {remote_file_name} has been modified, syncing changes...")
+-                    remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # Update the hash value in the index file
+-                    push_chunk(remote=remote,local_file_path=Path(tmp_file.name),force=True) # Update the remote modified file
+-                    index_json_str = index.model_dump_json()
+-                    metadata_file.write(index_json_str)
+-                    metadata_file.flush()
+-                    push_chunk(remote=remote,local_file_path=Path(metadata_file.name),remote_file_name=f"{torrent}.{MODEL_INDEX_FILE_NAME}",force=True) # Update the remote index file
++                    remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # Update the hash value in the index file
++                    push_chunk(remote=remote,local_file_path=Path(tmp_file.name),force=True) # Update the remote modified file
++                    push_chunk(remote=remote,local_file_path=Path(metadata_file.name),remote_file_name=f"{torrent}.{MODEL_INDEX_FILE_NAME}",force=True) # Update the remote index file
+                     console.print(f"File has been synced successfully.")
+                 else:
+                     console.print(f"No changes detected in {remote_file_name}, skipping sync.")
++
++
++
+diff --git a/src/express/functions/view_model.py b/src/express/functions/view_model.py
+index e4942f7..0af0f59 100644
+--- a/src/express/functions/view_model.py
++++ b/src/express/functions/view_model.py
+@@ -137,11 +137,11 @@ def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
+     """
+     results = {}
+     for k, v in tqdm(state_dict.items(), desc="Analyzing Layers"):
+-        # Retrieve basic information (numel and shape are readable even on meta devices)
+         num_params = v.numel()
+         shape = list(v.shape)
+ 
+-        # Initialize results
+         results[k] = {
+             "params": num_params,
+             "shape": shape,
+@@ -149,15 +149,15 @@ def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
+             "er": 0.0
+         }
+ 
+-        # Perform SVD only when not on meta devices and calculation is required
+-        # If on meta devices, SVD cannot run, skip calculation logic but retain entries
+         if not v.is_meta:
+             if calc_fp:
+                 results[k]["fp"] = SVDAnalyzer.get_svd_fingerprint(v)
+             if calc_er:
+                 results[k]["er"] = SVDAnalyzer.get_effective_rank(v)
+         else:
+-            # Optional: Mark the layer as offloaded at FP
+             results[k]["fp"] = "[Offloaded]"
+ 
+     return results
+diff --git a/src/express/math/SVDAnalyzer.py b/src/express/math/SVDAnalyzer.py
+index fdcd5fb..0e8a409 100644
+--- a/src/express/math/SVDAnalyzer.py
++++ b/src/express/math/SVDAnalyzer.py
+@@ -13,7 +13,7 @@ class SVDAnalyzer:
+     @classmethod
+     def get_svd_fingerprint(cls, tensor: torch.Tensor, bins: int = 10) -> str:
+         if tensor.ndim < 2: return ""
+-        # Convert to float32 numpy to resolve BF16 errors and adapt to joblib caching
++        # Convert to float32 numpy to resolve BF16 errors and adapt to joblib caching
+         matrix_np = tensor.detach().cpu().contiguous().to(torch.float32).numpy()
+         return cls._cached_fingerprint_calc(matrix_np, bins)
+ 
+@@ -74,43 +74,43 @@ class SVDAnalyzer:
+ class TestSVDAnalyzer(unittest.TestCase):
+ 
+     def test_full_rank_matrix(self):
+-        """Test full-rank matrix (even distribution of knowledge)"""
+-        # Singular values of an identity matrix are all 1
+         tensor = torch.eye(100)
+         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
+         er = SVDAnalyzer.get_effective_rank(tensor)
+ 
+         print(f"\nFull Rank [Eye]: {fingerprint} ER(Effective Rank): {er:.2f}")
+-        # Ideally, the fingerprint of a full-rank matrix should be fully filled [██████████]
+         self.assertIn("█", fingerprint)
+         self.assertAlmostEqual(er, 100.0, delta=1.0)
+ 
+     def test_low_rank_matrix(self):
+-        """Test low-rank matrix (feature collapse)"""
+-        # Construct a 100x100 matrix with a rank of only 1
+         tensor = torch.ones((100, 100))
+         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
+         er = SVDAnalyzer.get_effective_rank(tensor)
+ 
+         print(f"Low Rank [Ones]: {fingerprint} ER: {er:.2f}")
+-        # For a rank-1 matrix, only the first bin should be filled [█         ]
++        # For a rank-1 matrix, only the first bin should be filled [█ ]
+         self.assertTrue(fingerprint.startswith("[█"))
+         self.assertLess(er, 5.0)
+ 
+     def test_random_matrix(self):
+-        """测试随机矩阵（模拟训练中的层）"""
++        """Test random matrix (simulating layers in training)"""
+         tensor = torch.randn(100, 100)
+         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
+         er = SVDAnalyzer.get_effective_rank(tensor)
+ 
+         print(f"Random Matrix:   {fingerprint} ER: {er:.2f}")
+-        # 随机矩阵通常呈现 平滑衰减
++        # Random matrices usually exhibit smooth decay
+         self.assertIsInstance(fingerprint, str)
+         self.assertTrue(er > 10.0)
+ 
+     def test_high_dim_tensor(self):
+-        """测试多维 Tensor（模拟 Conv2d 或线性层参数）"""
+-        # 模拟 shape [out_channels, in_channels, k, k]
++        """Test high-dimensional Tensor (simulating Conv2d or linear layer parameters)"""
++        # Simulate shape [out_channels, in_channels, k, k]
+         tensor = torch.randn(32, 64, 3, 3)
+         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor, bins=10)
+ 
+         print(f"High Dim Tensor: {fingerprint}")
+         self.assertEqual(len(fingerprint), 12)  # [ + 10 chars + ]
+ 
+     def test_invalid_input(self):
+-        """测试非法输入"""
+-        # 1D tensor 没有奇异值概念
++        """Test invalid input"""
++        # 1D tensors do not have a concept of singular values
+         tensor = torch.randn(10)
+         fingerprint = SVDAnalyzer.get_svd_fingerprint(tensor)
+         self.assertEqual(fingerprint, "")
+diff --git a/src/express/tests/test_create.py b/src/express/tests/test_create.py
+index 7a7baee..35e99ab 100644
+--- a/src/express/tests/test_create.py
++++ b/src/express/tests/test_create.py
+@@ -1 +1,2 @@
+-# 刷commit(上游需要新commit才能拉取)
+\ No newline at end of file
++# Commit refresh (upstream requires a new commit to pull)
++

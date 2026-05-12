@@ -27,10 +27,11 @@ def open_editor(f):
 
 def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
     """
-    使用cli的编辑工具在线编辑文件，只允许编辑可以被decode为str的文件，编辑完成后会自动上传并更新索引文件的hash值。
+    Use the CLI editing tool to edit files online. Only files that can be decoded as str are allowed to be edited.
+    After editing, the file will be automatically uploaded and the hash value of the index file will be updated.
     :param remote:
     :param torrent:
-    :param remote_file_name: 远程文件名，必须是索引文件中存在的文件
+    :param remote_file_name: Remote file name, must be a file that exists in the index file
     :return:
     """
     with open_remote_file_rw(remote, torrent, remote_file_name) as f:
@@ -39,7 +40,7 @@ def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
 @contextmanager
 def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str):
     """
-    在目标文件上进行修改，并更新索引文件
+    Modify the target file and update the index file
     :param remote:
     :param torrent:
     :param remote_file_name:
@@ -62,12 +63,12 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
                 remote_chunk_hash = fast_checksum(Path(tmp_file.name))
                 if remote_chunk_metadata.file_checksum_sha256 != remote_chunk_hash:
                     console.print(f"File {remote_file_name} has been modified, syncing changes...")
-                    remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # 更新索引文件中的hash值
-                    push_chunk(remote=remote,local_file_path=Path(tmp_file.name),force=True) # 更新远程修改文件
-                    index_json_str = index.model_dump_json()
-                    metadata_file.write(index_json_str)
-                    metadata_file.flush()
-                    push_chunk(remote=remote,local_file_path=Path(metadata_file.name),remote_file_name=f"{torrent}.{MODEL_INDEX_FILE_NAME}",force=True) # 更新远程索引文件
+                    remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # Update the hash value in the index file
+                    push_chunk(remote=remote,local_file_path=Path(tmp_file.name),force=True) # Update the remote modified file
+                    push_chunk(remote=remote,local_file_path=Path(metadata_file.name),remote_file_name=f"{torrent}.{MODEL_INDEX_FILE_NAME}",force=True) # Update the remote index file
                     console.print(f"File has been synced successfully.")
                 else:
                     console.print(f"No changes detected in {remote_file_name}, skipping sync.")
+
+
+
