@@ -63,12 +63,12 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
                 remote_chunk_hash = fast_checksum(Path(tmp_file.name))
                 if remote_chunk_metadata.file_checksum_sha256 != remote_chunk_hash:
                     console.print(f"File {remote_file_name} has been modified, syncing changes...")
-                    remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # Update the hash value in the index file
-                    push_chunk(remote=remote,local_file_path=Path(tmp_file.name),force=True) # Update the remote modified file
-                    push_chunk(remote=remote,local_file_path=Path(metadata_file.name),remote_file_name=f"{torrent}.{MODEL_INDEX_FILE_NAME}",force=True) # Update the remote index file
+                    remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash
+                    push_chunk(remote=remote,local_file_path=Path(tmp_file.name),force=True)
+                    index_json_str = index.model_dump_json()
+                    metadata_file.write(index_json_str)
+                    metadata_file.flush()
+                    push_chunk(remote=remote,local_file_path=Path(metadata_file.name),remote_file_name=f"{torrent}.{MODEL_INDEX_FILE_NAME}",force=True)
                     console.print(f"File has been synced successfully.")
                 else:
                     console.print(f"No changes detected in {remote_file_name}, skipping sync.")
-
-
-
