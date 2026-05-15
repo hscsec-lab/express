@@ -26,7 +26,7 @@ def _list(remote: Remote, torrent: bool = False) -> List[Metadata] | List[Torren
 
     if torrent:
         return torrents
-    return metadata_list # 根据上层调用需求返回Metadata列表或者Torrent列表
+    return metadata_list # Return Metadata list or Torrent list based on upper-layer call requirements
 
 def push(model: Model, remote: Remote) -> None:
     """Pushes a model and its indexed files to the remote server."""

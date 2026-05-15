@@ -74,7 +74,7 @@ def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path,
                 ))
             return local_file_path
 
-    # 执行下载逻辑
+    # Execute download logic
     local_file_path.parent.mkdir(parents=True, exist_ok=True)
     remote.s3_client.download_file(
         remote.s3_bucket,
@@ -83,14 +83,14 @@ def pull_file(remote: Remote, remote_file_path: Path, local_file_path: Path,
         Callback=DownloadProgressSimple(str(local_file_path.name))
     )
 
-    # 下载后建议立即用新算法验证并存入本地缓存（如果以后有本地 metadata 库的话）
+    # After downloading, it is recommended to immediately verify with the new algorithm and store it in the local cache (if there will be a local metadata library in the future)
     return local_file_path
 @contextmanager
 def open_remote_file(remote: Remote, remote_file_path: Path, local_file_path: Path, file_checksum_sha256: str | None,
                      force: bool = False) -> Generator[BufferedReader, Any, None]:
     """Context manager that downloads a remote file and yields a read-only file object."""
     if local_file_path.name == MODEL_INDEX_FILE_NAME:
-        # 如果是索引文件，那么远程文件名是f"{model_metadata_torrent}.{MODEL_INDEX_FILE_NAME}"
+        # If it is an index file, then the remote file name is f"{model_metadata_torrent}.{MODEL_INDEX_FILE_NAME}"
         ...
     pull_file(remote, remote_file_path, local_file_path, file_checksum_sha256, force)
     f = None
