@@ -14,7 +14,8 @@ from express.base.s3 import ProgressPercentage, DownloadProgressSimple
 
 def push_chunk(remote: Remote, local_file_path: Path,remote_file_name: str = None,force: bool = False) -> None:
     """
-    推送一个chunk文件到远程服务器，文件名为chunk的sha256值，如果文件已经存在则跳过。
+    Push a chunk file to the remote server. The remote file name defaults to the SHA256
+    checksum of the chunk. Skips upload if the file already exists.
     :param remote_file_name:
     :param remote:
     :param local_file_path:

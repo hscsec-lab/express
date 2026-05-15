@@ -49,7 +49,7 @@ class SVDAnalyzer:
     @classmethod
     def get_effective_rank(cls, tensor: torch.Tensor) -> float:
         """
-        修改点：同样采用缓存机制，大幅提升二次分析速度
+        Uses the same caching mechanism to significantly speed up repeated analyses.
         """
         if tensor.ndim < 2: return 0.0
         matrix_np = tensor.detach().to(torch.float32).cpu().numpy()
