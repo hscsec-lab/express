@@ -16,16 +16,16 @@ def assert_serializable(obj: BaseModel) -> bool:
         raise AssertionError(f"Object is not JSON-serializable: {e}")
 def get_torrent(obj: BaseModel) -> Torrent:
     """
-    从obj 序列化出可逆的torrent
+    Serialize a reversible torrent from the given object.
     :param obj:
     :return:
     """
     return Torrent(zlib.compress(obj.model_dump_json().encode()).hex())
 def from_torrent(torrent: Torrent, expect_type: Type[T]) -> T:
     """
-    从torrent获取任意的expect_type
+    Deserialize a torrent back into the expected Pydantic type.
     :param torrent: Torrent
-    :param expect_type: 期待的pydantic类型
+    :param expect_type: The expected Pydantic model type
     :return:
     """
     compressed = bytes.fromhex(torrent)
@@ -39,7 +39,7 @@ def search_exact(
         case_sensitive: bool = True
 ) -> List[T]:
     """
-    精准搜索Pydantic 类型obj
+    Exact-match search on a list of Pydantic model objects by field value.
     :param items:
     :param field:
     :param value:

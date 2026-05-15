@@ -60,7 +60,7 @@ def fast_checksum(file_path: Path, sample_size: int = 65536, sample_segments: in
 
 def generate_index(folder_path: Path) -> FolderIndex:
     """
-    根据文件夹生成索引
+    Generate a file index from the given folder.
     :param folder_path:
     :return:
     """
@@ -81,7 +81,7 @@ def generate_index(folder_path: Path) -> FolderIndex:
 
 def get_remote_chunk_metadata_from_index(folder_index: FolderIndex, remote_file_name: str) -> FileMetadata | None:
     """
-        根据索引获取远程文件名
+        Retrieve file metadata from the index by remote file name.
     :param folder_index:
     :param remote_file_name:
     :return:

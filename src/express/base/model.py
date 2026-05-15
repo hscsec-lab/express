@@ -35,25 +35,25 @@ OPERATORS = {
 
 def evaluate_model_expression(expr: str, model_map: dict):
     """
-    解析并计算模型表达式
-    :param expr: 表达式字符串，例如 "(A + B) * 0.5"
-    :param model_map: 变量名到 Model 对象的映射
+    Parse and calculate model expression
+    :param expr: Expression string, e.g., "(A + B) * 0.5"
+    :param model_map: Mapping from variable name to Model object
     """
     tree = ast.parse(expr, mode='eval')
 
     def _eval(node):
         if isinstance(node, ast.BinOp):
             return OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
-        elif isinstance(node, ast.Num):  # 支持数字缩放
+        elif isinstance(node, ast.Num):  # Support numeric scaling
             return node.n
-        elif isinstance(node, ast.Constant):  # 兼容新版 Python
+        elif isinstance(node, ast.Constant):  # Compatible with newer Python versions
             return node.value
         elif isinstance(node, ast.Name):
             if node.id in model_map:
                 return model_map[node.id]
-            raise ValueError(f"未定义的模型变量: {node.id}")
+            raise ValueError(f"Undefined model variable: {node.id}")
         else:
-            raise TypeError(f"不支持的表达式语法: {type(node)}")
+            raise TypeError(f"Unsupported expression syntax: {type(node)}")
 
     return _eval(tree.body)
 
@@ -88,15 +88,15 @@ class Model:
     def __init__(self, path: Path):
         """
         Init
-        :param path: 模型文件夹路径
+        :param path: Model folder path
         """
         if not path.exists():
             console.print(f"Created model {path}")
             path.mkdir()
         self.metadata_file_name = METADATA_FILE_NAME
         self.path = path
-        self.folder_index: FolderIndex = self.write_index_file()  # 每次调用覆盖到最新的索引
-        self._model_instance: Optional[PreTrainedModel] = None  # 延迟加载模型实例
+        self.folder_index: FolderIndex = self.write_index_file()  # Overwrite to the latest index each time it is called
+        self._model_instance: Optional[PreTrainedModel] = None  # Lazy load model instance
 
         assert self.path.is_dir(), f"{self.path} must be directory."
 
@@ -125,27 +125,27 @@ class Model:
         return self._save(model_a)
 
     def __add__(self, other):
-        """加法: model1 + model2"""
+        """Addition: model1 + model2"""
         return self._apply_op(other, lambda a, b: a + b)
 
     def __sub__(self, other):
-        """减法: model1 - model2"""
+        """Subtraction: model1 - model2"""
         return self._apply_op(other, lambda a, b: a - b)
 
     def __mul__(self, other):
-        """乘法: model1 * model2 (Hadamard product)"""
+        """Multiplication: model1 * model2 (Hadamard product)"""
         return self._apply_op(other, lambda a, b: a * b)
 
     def __truediv__(self, other):
-        """除法: model1 / model2"""
-        # 注意：除法需要防止除以 0
+        """Division: model1 / model2"""
+        # Note: Division needs to prevent division by zero
         return self._apply_op(other, lambda a, b: a / (b + 1e-12))
 
     def __rmul__(self, other):
-        return self.__mul__(other)  # 乘法满足交换律
+        return self.__mul__(other)  # Multiplication is commutative
 
     def __rtruediv__(self, other):
-        # 这是处理 scalar / model 的情况，逻辑稍有不同
+        # This handles the case of scalar / model, with slightly different logic
         return self._apply_op(other, lambda a, b: b / (a + 1e-12))
 
     def _load(self, device: Optional[str] = None, **kwargs) -> PreTrainedModel:
@@ -234,7 +234,7 @@ class Model:
 
     @property
     def model(self) -> PreTrainedModel:
-        """方便通过 model.model 直接获取实例"""
+        """Conveniently access the model instance via model.model"""
         return self._load()
 
     def write_index_file(self) -> FolderIndex:
@@ -262,7 +262,7 @@ class Model:
 
     def get_metadata(self) -> Metadata:
         """
-        获取模型的metadata
+        Get the metadata of the model
         :return:
         """
         metadata_path = self.path / self.metadata_file_name
@@ -272,7 +272,7 @@ class Model:
 
     def create_metadata(self, authors="bob", emails="human@human.com", version="0.1.0", tags=None, name="default"):
         """
-        创建模型的metadata
+        Create metadata for the model
         :return:
         """
         metadata_path = self.path / self.metadata_file_name
