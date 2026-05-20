@@ -5,38 +5,42 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from simple_file_checksum import get_checksum
 from express import console
 
 from express.base.client import Remote
 from express.base.data import Torrent
-from express.base.file import FolderIndex, get_remote_chunk_metadata_from_index
+from express.base.file import FolderIndex, get_remote_chunk_metadata_from_index, fast_checksum
 from express.base.model import MODEL_INDEX_FILE_NAME
 from express.base.remote import pull_index_with_torrent
 from express.base.transfer import push_chunk, pull_file
 
+def open_editor(f):
+    """
+    Edit a local file using the system's default editor.
+    :param f:
+    :return:
+    """
+    editor_cmd = os.getenv('EDITOR', 'vim')
+    cmd = shlex.split(editor_cmd)
+    cmd.append(f.name)
+    subprocess.run(cmd, check=True)
 
 def edit_file(remote: Remote, torrent: Torrent, remote_file_name: str):
     """
-    使用cli的编辑工具在线编辑文件，只允许编辑可以被decode为str的文件，编辑完成后会自动上传并更新索引文件的hash值。
+    Use the CLI editing tool to edit files online. Only files that can be decoded as str are allowed to be edited.
+    After editing, the file will be automatically uploaded and the hash value of the index file will be updated.
     :param remote:
     :param torrent:
-    :param remote_file_name: 远程文件名，必须是索引文件中存在的文件
+    :param remote_file_name: Remote file name, must be a file that exists in the index file
     :return:
     """
     with open_remote_file_rw(remote, torrent, remote_file_name) as f:
-        editor_cmd = os.getenv('EDITOR', 'vim')
-        cmd = shlex.split(editor_cmd)
-        cmd.append(f.name)
-        try:
-            subprocess.run(cmd, check=True)
-        except FileNotFoundError:
-            print(f"错误：找不到编辑器 '{cmd[0]}'")
+        open_editor(f)
 
 @contextmanager
 def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str):
     """
-    在目标文件上进行修改，并更新索引文件
+    Modify the target file and update the index file
     :param remote:
     :param torrent:
     :param remote_file_name:
@@ -56,19 +60,15 @@ def open_remote_file_rw(remote: Remote, torrent: Torrent, remote_file_name: str)
                         f.flush()
                         os.fsync(f.fileno())
             finally:
-                remote_chunk_hash = get_checksum(tmp_file.name)
+                remote_chunk_hash = fast_checksum(Path(tmp_file.name))
                 if remote_chunk_metadata.file_checksum_sha256 != remote_chunk_hash:
                     console.print(f"File {remote_file_name} has been modified, syncing changes...")
-                    remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash # 更新索引文件中的hash值
-                    push_chunk(remote=remote,local_file_path=Path(tmp_file.name),force=True) # 更新远程修改文件
+                    remote_chunk_metadata.file_checksum_sha256 = remote_chunk_hash
+                    push_chunk(remote=remote,local_file_path=Path(tmp_file.name),force=True)
                     index_json_str = index.model_dump_json()
                     metadata_file.write(index_json_str)
                     metadata_file.flush()
-                    push_chunk(remote=remote,local_file_path=Path(metadata_file.name),remote_file_name=f"{torrent}.{MODEL_INDEX_FILE_NAME}",force=True) # 更新远程索引文件
+                    push_chunk(remote=remote,local_file_path=Path(metadata_file.name),remote_file_name=f"{torrent}.{MODEL_INDEX_FILE_NAME}",force=True)
                     console.print(f"File has been synced successfully.")
                 else:
                     console.print(f"No changes detected in {remote_file_name}, skipping sync.")
-if __name__ == '__main__':
-    torrent = Torrent(
-        "789cab564a2c2dc9c82f2a56b2524aad48cc2dc8498d8789e828a5e62666e680a4324a7313f31cc0a45e727e2e50aa2cb5a838333f0f2867a00784409192c474a0d268b83140be52ac8e525e626e2a505560796a9eb1ae819e9993be522d0075cd26a5")
-    edit_file(Remote(), torrent, "config.json")

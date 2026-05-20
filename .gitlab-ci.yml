@@ -11,7 +11,7 @@ stages:
 
 variables:
   PYTHON_IMAGE: python:3.12
-  CI_RUNNER_TAGS: test-k8s
+  CI_RUNNER_TAGS: "共享"
   REGISTRY_PROJECT_PATH: "gitlab/$CI_PROJECT_NAME"
   FINAL_IMAGE_NAME: ${CI_PROJECT_NAME}
   REGISTRY: $Docker_CI_REGISTRY
