@@ -14,6 +14,7 @@ from express.base.client import Remote, search_extension, is_remote_file_exists,
 from express.base.data import Torrent, get_torrent, from_torrent, search_models
 from express.base.file import FolderIndex, FileMetadata
 from express.base.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
+from express.base.progress import TransferSession, busy_status, catalog_progress
 from express.base.transfer import push_file, pull_file, open_remote_file
 
 def local_workdir() -> Path:
@@ -51,6 +52,13 @@ def _content_keys_from_index(index: FolderIndex) -> Set[str]:
     return keys
 
 
+def plan_chunk_deletion(owned_keys: Set[str], referenced_keys: Set[str]) -> Tuple[Set[str], Set[str]]:
+    """Return (exclusive_keys, shared_keys) for a safe torrent delete."""
+    shared_keys = owned_keys & referenced_keys
+    exclusive_keys = owned_keys - shared_keys
+    return exclusive_keys, shared_keys
+
+
 def _load_remote_index(remote: Remote, torrent: Torrent, retries: int = 5) -> FolderIndex:
     """Load a remote folder index via GetObject, with retries for transient S3/R2 errors."""
     index_key = _index_remote_key(torrent)
@@ -79,18 +87,27 @@ def _referenced_chunks(remote: Remote, exclude_torrent: Torrent | None = None) -
     based on an incomplete reference scan.
     """
     referenced: Set[str] = set()
-    index_keys = search_extension(remote, MODEL_INDEX_FILE_NAME)
-    for index_key in index_keys:
-        torrent = _torrent_from_index_key(index_key)
-        if exclude_torrent is not None and torrent == exclude_torrent:
-            continue
-        try:
-            index = _load_remote_index(remote, torrent)
-        except Exception as exc:
-            raise RuntimeError(
-                f"Aborting delete: cannot verify references from index {index_key}: {exc}"
-            ) from exc
-        referenced |= _content_keys_from_index(index)
+    with busy_status("Checking shared chunks..."):
+        index_keys = search_extension(remote, MODEL_INDEX_FILE_NAME)
+
+    if not index_keys:
+        return referenced
+
+    with catalog_progress() as progress:
+        task_id = progress.add_task("Scanning references", total=len(index_keys))
+        for index_key in index_keys:
+            torrent = _torrent_from_index_key(index_key)
+            if exclude_torrent is not None and torrent == exclude_torrent:
+                progress.advance(task_id)
+                continue
+            try:
+                index = _load_remote_index(remote, torrent)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Aborting delete: cannot verify references from index {index_key}: {exc}"
+                ) from exc
+            referenced |= _content_keys_from_index(index)
+            progress.advance(task_id)
     return referenced
 
 
@@ -121,8 +138,10 @@ def delete(torrent: Torrent, remote: Remote, yes: bool = False, dry_run: bool = 
     metadata = from_torrent(torrent, Metadata)
     index = _load_remote_index(remote, torrent)
     owned_keys = _content_keys_from_index(index)
-    shared_keys = owned_keys & _referenced_chunks(remote, exclude_torrent=torrent)
-    exclusive_keys = owned_keys - shared_keys
+    exclusive_keys, shared_keys = plan_chunk_deletion(
+        owned_keys,
+        _referenced_chunks(remote, exclude_torrent=torrent),
+    )
 
     size_by_key = {obj["Key"]: obj["Size"] for obj in list_objects(remote)}
     missing_owned = sorted(key for key in owned_keys if key not in size_by_key)
@@ -183,10 +202,19 @@ class RemoteEntry:
 
 def catalog(remote: Remote) -> List[RemoteEntry]:
     """List remote models paired with their torrents."""
+    with busy_status("Listing remote indexes..."):
+        file_list = search_extension(remote, MODEL_INDEX_FILE_NAME)
+
     entries: List[RemoteEntry] = []
-    for file_name in search_extension(remote, MODEL_INDEX_FILE_NAME):
-        torrent = Torrent(file_name[: -len(f".{MODEL_INDEX_FILE_NAME}")])
-        entries.append(RemoteEntry(torrent=torrent, metadata=get_metadata(torrent)))
+    if not file_list:
+        return entries
+
+    with catalog_progress() as progress:
+        task_id = progress.add_task("Loading models", total=len(file_list))
+        for file_name in file_list:
+            torrent = Torrent(file_name[: -len(f".{MODEL_INDEX_FILE_NAME}")])
+            entries.append(RemoteEntry(torrent=torrent, metadata=get_metadata(torrent)))
+            progress.advance(task_id)
     return entries
 
 
@@ -232,24 +260,27 @@ def push(model: Model, remote: Remote) -> None:
     model_metadata_torrent: Torrent = get_torrent(model.get_metadata())
     folder_index: List[FileMetadata] = model.folder_index.folder_index
 
-    for file_metadata in folder_index:
-        push_file(model, remote, file_metadata, model_metadata_torrent)
+    with TransferSession("Push", total_files=len(folder_index)) as session:
+        for file_metadata in folder_index:
+            push_file(model, remote, file_metadata, model_metadata_torrent, session=session)
 
-    print(f"Push completed. Model torrent: {model_metadata_torrent}")
+    console.print(f"Push completed. Model torrent: {model_metadata_torrent}")
 
 
 def pull_model_with_index(index: dict, remote: Remote, save_path: Path, force: bool) -> Model:
     """Pulls all model files defined in the index dictionary to the specified path."""
     folder_index: List[FileMetadata] = FolderIndex(**index).folder_index
-    for file_metadata in folder_index:
-        if MODEL_INDEX_FILE_NAME != file_metadata.file_name:
+    files = [fm for fm in folder_index if MODEL_INDEX_FILE_NAME != fm.file_name]
+    with TransferSession("Pull", total_files=len(files)) as session:
+        for file_metadata in files:
             download_path = save_path / file_metadata.file_relative_path
             pull_file(
                 remote,
                 Path(file_metadata.file_checksum_sha256),
                 download_path,
                 file_checksum_sha256=file_metadata.file_checksum_sha256,
-                force=force
+                force=force,
+                session=session,
             )
     return Model(path=save_path)
 

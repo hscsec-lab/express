@@ -7,6 +7,7 @@ include:
     file: 'docker/docker.yml'
 
 stages:
+  - test
   - build
 
 variables:
@@ -19,3 +20,21 @@ variables:
   REGISTRY_PASSWORD: $Docker_CI_REGISTRY_PASSWORD
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
   CACHE_REPO: "$Docker_CI_REGISTRY/$REGISTRY_PROJECT_PATH/cache"
+
+# Lightweight unit tests (avoid installing torch/transformers).
+test:unit:
+  stage: test
+  image: ${PYTHON_IMAGE}
+  tags:
+    - 共享
+  variables:
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    PYTHONPATH: "src"
+  before_script:
+    - python -m pip install -U pip
+    - pip install pydantic rich pytest typer boto3
+  script:
+    - pytest -q
+  rules:
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"

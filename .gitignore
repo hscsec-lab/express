@@ -15,3 +15,8 @@ tmp
 *.flamegraph
 *.ss
 .cache
+
+# Local probe artifacts / secrets
+express-delete-probe/
+.env
+.env.*
