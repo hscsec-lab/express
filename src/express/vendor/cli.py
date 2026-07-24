@@ -171,24 +171,38 @@ def clear(model_path: Path):
 
 
 @app.command()
-def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="Display the torrent list")):
+def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="Only print torrent ids (script-friendly)")):
     """
-    获取远程模型列表
-    :param torrent:
-    :return:
+    列出远程模型及其 torrent
     """
     remote.ls(remote=Remote(), torrent=torrent)
 
 
 @app.command()
-def search(field: str, value: str):
+def search(
+        query: Optional[List[str]] = typer.Argument(None, help="Free text; multiple words are AND-matched"),
+        name: Optional[str] = typer.Option(None, "--name", "-n", help="Filter by model name (substring)"),
+        tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag (substring)"),
+        author: Optional[str] = typer.Option(None, "--author", "-a", help="Filter by author (substring)"),
+        version: Optional[str] = typer.Option(None, "--version", "-V", help="Filter by version (substring)"),
+):
     """
-    搜索远程模型
-    :param field:
-    :param value:
-    :return:
+    搜索远程模型并显示对应 torrent。
+
+    示例:
+      express search hive
+      express search hive 128k
+      express search --tag LBM
+      express search -a stupidfish -n HIVE0.5
     """
-    remote.search(remote=Remote(), field=field, value=value)
+    remote.search(
+        remote=Remote(),
+        query=" ".join(query) if query else None,
+        name=name,
+        tag=tag,
+        author=author,
+        version=version,
+    )
 
 
 @app.command()

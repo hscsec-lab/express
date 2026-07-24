@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Set, Tuple
 
@@ -10,7 +11,7 @@ from rich.text import Text
 
 from express import console
 from express.base.client import Remote, search_extension, is_remote_file_exists, list_objects, delete_objects
-from express.base.data import Torrent, get_torrent, from_torrent, search_exact
+from express.base.data import Torrent, get_torrent, from_torrent, search_models
 from express.base.file import FolderIndex, FileMetadata
 from express.base.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
 from express.base.transfer import push_file, pull_file, open_remote_file
@@ -168,18 +169,62 @@ def delete(torrent: Torrent, remote: Remote, yes: bool = False, dry_run: bool = 
 
 def _list(remote: Remote, torrent: bool = False) -> List[Metadata] | List[Torrent]:
     """Retrieves a list of available remote models or their torrents."""
-    file_list = search_extension(remote, MODEL_INDEX_FILE_NAME)
-    metadata_list: List[Metadata] = []
-    torrents: List[Torrent] = []
-
-    for file_name in file_list:
-        _torrent = Torrent(file_name.split(f'.{MODEL_INDEX_FILE_NAME}')[0])
-        torrents.append(_torrent)
-        metadata_list.append(get_metadata(_torrent))
-
+    entries = catalog(remote)
     if torrent:
-        return torrents
-    return metadata_list # Return Metadata list or Torrent list based on upper-layer call requirements
+        return [entry.torrent for entry in entries]
+    return [entry.metadata for entry in entries]
+
+
+@dataclass(frozen=True)
+class RemoteEntry:
+    torrent: Torrent
+    metadata: Metadata
+
+
+def catalog(remote: Remote) -> List[RemoteEntry]:
+    """List remote models paired with their torrents."""
+    entries: List[RemoteEntry] = []
+    for file_name in search_extension(remote, MODEL_INDEX_FILE_NAME):
+        torrent = Torrent(file_name[: -len(f".{MODEL_INDEX_FILE_NAME}")])
+        entries.append(RemoteEntry(torrent=torrent, metadata=get_metadata(torrent)))
+    return entries
+
+
+def _print_entries(entries: List[RemoteEntry], *, empty_message: str = "No models found.") -> None:
+    if not entries:
+        console.print(empty_message)
+        return
+
+    console.print(f"Found [bold]{len(entries)}[/bold] model(s):\n")
+    for i, entry in enumerate(entries, 1):
+        meta = entry.metadata
+        tags = ", ".join(meta.tags or []) or "-"
+        console.print(
+            Text.assemble(
+                (f"{i}. ", "bold"),
+                (meta.name or "(unnamed)", "cyan bold"),
+                (f"  v{meta.version}", "dim") if meta.version else ("", ""),
+            )
+        )
+        console.print(
+            Text.assemble(
+                ("   authors: ", "dim"),
+                (meta.authors or "-", ""),
+                ("  tags: ", "dim"),
+                (tags, ""),
+            )
+        )
+        if meta.emails:
+            console.print(Text.assemble(("   emails:  ", "dim"), (meta.emails, "")))
+        console.print(
+            Text.assemble(("   torrent: ", "dim"), (str(entry.torrent), "green")),
+            overflow="ignore",
+            crop=False,
+            soft_wrap=True,
+        )
+        if i != len(entries):
+            console.print()
+
 
 def push(model: Model, remote: Remote) -> None:
     """Pushes a model and its indexed files to the remote server."""
@@ -191,6 +236,7 @@ def push(model: Model, remote: Remote) -> None:
         push_file(model, remote, file_metadata, model_metadata_torrent)
 
     print(f"Push completed. Model torrent: {model_metadata_torrent}")
+
 
 def pull_model_with_index(index: dict, remote: Remote, save_path: Path, force: bool) -> Model:
     """Pulls all model files defined in the index dictionary to the specified path."""
@@ -207,6 +253,7 @@ def pull_model_with_index(index: dict, remote: Remote, save_path: Path, force: b
             )
     return Model(path=save_path)
 
+
 def pull_index_with_torrent(torrent: Torrent, remote: Remote) -> dict:
     """Downloads and loads the JSON index content associated with a specific torrent."""
     remote_index_path = f"{torrent}.{MODEL_INDEX_FILE_NAME}"
@@ -216,10 +263,12 @@ def pull_index_with_torrent(torrent: Torrent, remote: Remote) -> dict:
         with open_remote_file(remote, Path(remote_index_path), Path(tmp.name), file_checksum_sha256=None) as pulled_file:
             return json.loads(pulled_file.read())
 
+
 def pull_model(torrent: Torrent, remote: Remote, model: Model, force: bool) -> Model:
     """Coordinates downloading a model index and sequentially pulling all its files."""
     index = pull_index_with_torrent(torrent, remote)
     return pull_model_with_index(index, remote, save_path=model.path, force=force)
+
 
 def pull(torrent: Torrent, remote: Remote, force: bool = False) -> Model:
     """Main entrypoint to pull a remote model to the local work directory."""
@@ -233,14 +282,50 @@ def pull(torrent: Torrent, remote: Remote, force: bool = False) -> Model:
     model = Model(path=local_model_path)
     return pull_model(torrent, remote, model, force=force)
 
+
 def ls(remote: Remote, torrent: bool = False) -> None:
     """Prints the list of remote models to the console."""
-    console.print(_list(remote, torrent), overflow="ignore")
+    entries = catalog(remote)
+    if torrent:
+        for entry in entries:
+            console.print(entry.torrent)
+        return
+    _print_entries(entries)
 
-def search(remote: Remote, field: str, value: str) -> None:
-    """Searches for and prints models matching a specific metadata field and value."""
-    metadata_list = search_exact(_list(remote), field, value)
-    console.print(metadata_list)
+
+def search(
+        remote: Remote,
+        *,
+        query: str | None = None,
+        name: str | None = None,
+        tag: str | None = None,
+        author: str | None = None,
+        version: str | None = None,
+) -> None:
+    """Search remote models and print matches with their torrents."""
+    entries = catalog(remote)
+    matched_ids = {
+        id(meta)
+        for meta in search_models(
+            [entry.metadata for entry in entries],
+            query=query,
+            name=name,
+            tag=tag,
+            author=author,
+            version=version,
+        )
+    }
+    hits = [entry for entry in entries if id(entry.metadata) in matched_ids]
+    hint = query or " ".join(
+        part for part in [
+            f"name={name}" if name else "",
+            f"tag={tag}" if tag else "",
+            f"author={author}" if author else "",
+            f"version={version}" if version else "",
+        ] if part
+    ) or "all"
+    _print_entries(hits, empty_message=f"No models matched ({hint}).")
+
 
 if __name__ == '__main__':
     ls(remote=Remote())

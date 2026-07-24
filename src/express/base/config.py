@@ -2,6 +2,7 @@ import getpass
 import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -10,6 +11,27 @@ from express import console
 REQUIRED_KEYS = ("S3_AK", "S3_SK", "S3_ENDPOINT", "S3_BUCKET")
 OPTIONAL_KEYS = ("LOCAL_WORKDIR",)
 CONFIG_FILE_NAME = "config.json"
+BACK_TOKENS = frozenset({"-", ":back", ":prev"})
+
+
+@dataclass(frozen=True)
+class ConfigField:
+    key: str
+    label: str
+    secret: bool = False
+
+
+CONFIG_FIELDS = (
+    ConfigField("S3_AK", "S3 Access Key"),
+    ConfigField("S3_SK", "S3 Secret Key", secret=True),
+    ConfigField("S3_ENDPOINT", "S3 Endpoint"),
+    ConfigField("S3_BUCKET", "S3 Bucket"),
+    ConfigField("LOCAL_WORKDIR", "Local workdir"),
+)
+
+
+class GoBack(Exception):
+    """User asked to revisit the previous config field."""
 
 
 def config_dir() -> Path:
@@ -70,53 +92,122 @@ def missing_required_keys() -> List[str]:
     return [key for key in REQUIRED_KEYS if not os.getenv(key)]
 
 
-def _prompt_value(label: str, *, default: Optional[str] = None, secret: bool = False) -> str:
-    hint = f" [{default}]" if default else ""
+def _default_for(field: ConfigField, existing: Dict[str, str]) -> Optional[str]:
+    if field.key == "LOCAL_WORKDIR":
+        return existing.get(field.key) or os.getenv(field.key) or default_local_workdir()
+    return existing.get(field.key) or os.getenv(field.key)
+
+
+def _echo(text: str = "") -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+def _read_line_raw(prompt: str, *, secret: bool) -> str:
+    """TTY line editor: Ctrl+B goes back, Backspace edits, Enter confirms."""
+    import termios
+    import tty
+
+    _echo(prompt)
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    buf: List[str] = []
+    try:
+        tty.setcbreak(fd)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch == "\x03":  # Ctrl+C
+                _echo("\n")
+                raise KeyboardInterrupt
+            if ch == "\x04":  # Ctrl+D
+                _echo("\n")
+                raise EOFError
+            if ch == "\x02":  # Ctrl+B → previous field
+                _echo("\n")
+                raise GoBack()
+            if ch in {"\r", "\n"}:
+                _echo("\n")
+                return "".join(buf)
+            if ch in {"\x7f", "\b"}:
+                if buf:
+                    buf.pop()
+                    _echo("\b \b")
+                continue
+            if ch == "\x15":  # Ctrl+U clear line
+                while buf:
+                    buf.pop()
+                    _echo("\b \b")
+                continue
+            if len(ch) == 1 and ch.isprintable():
+                buf.append(ch)
+                _echo("*" if secret else ch)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+
+
+def _read_line_fallback(prompt: str, *, secret: bool) -> str:
+    """Non-raw fallback; type '-' alone to go back."""
+    if secret:
+        return getpass.getpass(prompt)
+    return input(prompt)
+
+
+def _read_line(prompt: str, *, secret: bool = False) -> str:
+    if sys.stdin.isatty() and sys.platform != "win32":
+        try:
+            import termios
+        except ImportError:
+            return _read_line_fallback(prompt, secret=secret)
+        try:
+            return _read_line_raw(prompt, secret=secret)
+        except (OSError, termios.error):
+            pass
+    return _read_line_fallback(prompt, secret=secret)
+
+
+def _prompt_field(field: ConfigField, default: Optional[str], *, index: int, total: int) -> str:
+    hint = f" [{_mask(default) if field.secret and default else default}]" if default else ""
+    prompt = f"[{index}/{total}] {field.label}{hint}: "
     while True:
-        if secret:
-            # getpass cannot show a default inline; print hint separately.
-            if default:
-                console.print(f"{label}{hint} (leave blank to keep current)")
-                value = getpass.getpass(f"{label}: ")
-                value = value.strip() or default
-            else:
-                value = getpass.getpass(f"{label}: ").strip()
-        else:
-            raw = input(f"{label}{hint}: ").strip()
-            value = raw or (default or "")
+        raw = _read_line(prompt, secret=field.secret).strip()
+        if raw in BACK_TOKENS:
+            raise GoBack()
+        value = raw or (default or "")
         if value:
             return value
-        console.print("Value is required.")
+        console.print("不能为空。Ctrl+B 或输入 - 可返回上一项。")
+
+
+def _mask(value: str) -> str:
+    if len(value) <= 4:
+        return "*" * len(value)
+    return f"{value[:2]}{'*' * (len(value) - 4)}{value[-2:]}"
 
 
 def interactive_configure(existing: Optional[Dict[str, str]] = None, *, first_run: bool = False) -> Dict[str, str]:
     existing = existing or {}
-    if first_run:
-        console.print("Express first-time setup: configure remote storage.")
-    else:
-        console.print("Express configuration.")
+    console.print("Express first-time setup: configure remote storage." if first_run else "Express configuration.")
     console.print(f"Config file: {config_path()}")
+    console.print("输错了按 [bold]Ctrl+B[/bold] 回到上一项；也可以输入 [bold]-[/bold] 后回车。")
 
-    data: Dict[str, str] = {}
-    data["S3_AK"] = _prompt_value("S3 Access Key (S3_AK)", default=existing.get("S3_AK") or os.getenv("S3_AK"))
-    data["S3_SK"] = _prompt_value(
-        "S3 Secret Key (S3_SK)",
-        default=existing.get("S3_SK") or os.getenv("S3_SK"),
-        secret=True,
-    )
-    data["S3_ENDPOINT"] = _prompt_value(
-        "S3 Endpoint (S3_ENDPOINT)",
-        default=existing.get("S3_ENDPOINT") or os.getenv("S3_ENDPOINT"),
-    )
-    data["S3_BUCKET"] = _prompt_value(
-        "S3 Bucket (S3_BUCKET)",
-        default=existing.get("S3_BUCKET") or os.getenv("S3_BUCKET"),
-    )
-    data["LOCAL_WORKDIR"] = _prompt_value(
-        "Local workdir (LOCAL_WORKDIR)",
-        default=existing.get("LOCAL_WORKDIR") or os.getenv("LOCAL_WORKDIR") or default_local_workdir(),
-    )
-    return data
+    answers: Dict[str, str] = {}
+    index = 0
+    total = len(CONFIG_FIELDS)
+
+    while index < total:
+        field = CONFIG_FIELDS[index]
+        default = answers.get(field.key) or _default_for(field, existing)
+        try:
+            answers[field.key] = _prompt_field(field, default, index=index + 1, total=total)
+            index += 1
+        except GoBack:
+            if index == 0:
+                console.print("已经是第一项了。")
+                continue
+            index -= 1
+            console.print(f"← 回到 {CONFIG_FIELDS[index].label}")
+
+    return answers
 
 
 def ensure_remote_config(*, force_interactive: bool = False) -> Path | None:
