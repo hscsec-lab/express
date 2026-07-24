@@ -29,12 +29,11 @@ test:unit:
     - 共享
   variables:
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
-    PYTHONPATH: "src"
   before_script:
     - python -m pip install -U pip
-    - pip install pydantic rich pytest typer boto3
+    - pip install "pytest>=9.0.2" pydantic rich typer boto3
   script:
-    - pytest -q
+    - pytest
   rules:
     - if: $CI_COMMIT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
