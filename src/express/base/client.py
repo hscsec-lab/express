@@ -1,11 +1,11 @@
 import os
 from typing import List
-import boto3
 
 
 class Remote:
     """Manages S3 connection credentials and clients."""
     def __init__(self):
+        import boto3
         from express.base.config import ensure_remote_config
 
         ensure_remote_config()
@@ -28,6 +28,7 @@ class Remote:
             aws_secret_access_key=self.s3_sk,
             endpoint_url=self.s3_endpoint
         )
+
 
 def is_remote_file_exists(s3_client, bucket: str, key: str) -> bool:
     """Checks if a file exists in the specified S3 bucket."""

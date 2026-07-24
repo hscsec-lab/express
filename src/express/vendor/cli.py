@@ -1,15 +1,8 @@
 from pathlib import Path
-from typing import Annotated, List, Optional
+from typing import List, Optional
 import os
 
 import typer
-
-from express.base import remote
-from express.base.data import Torrent
-from express.functions.edit_file import edit_file
-from express.base.model import Model, _info, evaluate_model_expression
-from express.base.remote import Remote
-from express.functions.view_model import view_model
 
 app = typer.Typer(
     name="express",
@@ -21,10 +14,11 @@ app = typer.Typer(
 def edit(torrent: str, remote_file_name: str):
     """
     在线编辑远程文件
-    :param torrent:
-    :param remote_file_name:
-    :return:
     """
+    from express.base.client import Remote
+    from express.base.data import Torrent
+    from express.functions.edit_file import edit_file
+
     edit_file(Remote(), Torrent(torrent), remote_file_name)
 
 
@@ -32,9 +26,11 @@ def edit(torrent: str, remote_file_name: str):
 def push(model_path: Path):
     """
     推送模型
-    :param model_path:
-    :return:
     """
+    from express.base import remote
+    from express.base.client import Remote
+    from express.base.model import Model
+
     model: Model = Model(path=model_path)
     remote.push(model, Remote())
 
@@ -43,10 +39,11 @@ def push(model_path: Path):
 def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="Automatically overwrite local files when local files and cloud hashes do not match.")):
     """
     拉取模型
-    :param torrent:
-    :param force:
-    :return:
     """
+    from express.base import remote
+    from express.base.client import Remote
+    from express.base.data import Torrent
+
     remote.pull(Torrent(torrent), Remote(), force)
 
 
@@ -60,6 +57,10 @@ def delete(
     """
     删除远端模型（仅删除该 torrent 独有对象；仍被其他模型引用的 chunk 会保留）
     """
+    from express.base import remote
+    from express.base.client import Remote
+    from express.base.data import Torrent
+
     remote.delete(Torrent(torrent), Remote(), yes=yes, dry_run=dry_run)
 
 
@@ -68,6 +69,9 @@ def du():
     """
     查询当前存储桶总大小与总文件数量
     """
+    from express.base import remote
+    from express.base.client import Remote
+
     remote.du(Remote())
 
 
@@ -107,10 +111,10 @@ def config(
 def info(torrent: str, ctx: typer.Context):
     """
     查看torrent信息
-    :param torrent:
-    :param ctx:
-    :return:
     """
+    from express.base.data import Torrent
+    from express.base.model import _info
+
     _info(Torrent(torrent), fields=[arg[2:] for arg in ctx.args if arg.startswith('--')])
 
 
@@ -119,14 +123,9 @@ def create(model_path: Path, authors="default_author", emails="default@email.com
            name=None):
     """
     创建模型
-    :param model_path:
-    :param authors:
-    :param emails:
-    :param version:
-    :param tags:
-    :param name:
-    :return:
     """
+    from express.base.model import Model
+
     if not name:
         name = model_path.name
     model = Model(Path(name))
@@ -142,13 +141,6 @@ def init(model_path: Path, authors="default_author", emails="default@email.com",
          name=None):
     """
     初始化模型
-    :param model_path:
-    :param authors:
-    :param emails:
-    :param version:
-    :param tags:
-    :param name:
-    :return:
     """
     create(model_path=model_path,
            authors=authors,
@@ -162,9 +154,9 @@ def init(model_path: Path, authors="default_author", emails="default@email.com",
 def clear(model_path: Path):
     """
     清除模型元数据
-    :param model_path:
-    :return:
     """
+    from express.base.model import Model
+
     model = Model(model_path)
     model.remove_metadata()
     model.remove_index_file()
@@ -175,6 +167,9 @@ def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="Only print t
     """
     列出远程模型及其 torrent
     """
+    from express.base import remote
+    from express.base.client import Remote
+
     remote.ls(remote=Remote(), torrent=torrent)
 
 
@@ -195,6 +190,9 @@ def search(
       express search --tag LBM
       express search -a stupidfish -n HIVE0.5
     """
+    from express.base import remote
+    from express.base.client import Remote
+
     remote.search(
         remote=Remote(),
         query=" ".join(query) if query else None,
@@ -214,16 +212,14 @@ def view(
 ):
     """
     查看模型信息
-    :param model_path: 模型路径
-    :param diff_with: 对比差异的模型路径，逻辑为Model(diff_with) - Model(model_path)
-    :param calc_fp:
-    :param calc_er:
-    :return:
     """
+    from express.base.model import Model
+    from express.functions.view_model import view_model
+
     model = Model(model_path)
     if diff_with:
         target_model = Model(diff_with)
-        view_model(target_model - model,calc_fp,calc_er)
+        view_model(target_model - model, calc_fp, calc_er)
     else:
         view_model(model, calc_fp, calc_er)
 
@@ -239,6 +235,8 @@ def compute(
     支持多模型复杂的四则运算。
     示例: A=m1.bin B=m2.bin "(A + B) * 0.5"
     """
+    from express.base.model import Model, evaluate_model_expression
+
     if len(args) < 2:
         raise typer.BadParameter("At least one model mapping and a calculation expression must be provided.")
     mappings, expression = args[:-1], args[-1]
@@ -249,4 +247,4 @@ def compute(
         for name, path in [item.split("=", 1)]
     }
 
-    result = evaluate_model_expression(expression, model_map)
+    evaluate_model_expression(expression, model_map)
