@@ -6,6 +6,9 @@ import boto3
 class Remote:
     """Manages S3 connection credentials and clients."""
     def __init__(self):
+        from express.base.config import ensure_remote_config
+
+        ensure_remote_config()
         for var in ["S3_AK", "S3_SK", "S3_ENDPOINT", "S3_BUCKET"]:
             if not os.getenv(var):
                 raise EnvironmentError(f"Missing required environment variable: {var}")
@@ -48,3 +51,25 @@ def search_extension(remote: Remote, extension: str) -> List[str]:
             found_files.append(item)
 
     return found_files
+
+
+def list_objects(remote: Remote) -> List[dict]:
+    """Lists all objects in the bucket as dicts with Key and Size."""
+    paginator = remote.s3_client.get_paginator('list_objects_v2')
+    objects: List[dict] = []
+    for page in paginator.paginate(Bucket=remote.s3_bucket):
+        for obj in page.get('Contents') or []:
+            objects.append({"Key": obj["Key"], "Size": obj["Size"]})
+    return objects
+
+
+def delete_objects(remote: Remote, keys: List[str]) -> None:
+    """Deletes objects by key in batches of up to 1000."""
+    if not keys:
+        return
+    for i in range(0, len(keys), 1000):
+        batch = keys[i:i + 1000]
+        remote.s3_client.delete_objects(
+            Bucket=remote.s3_bucket,
+            Delete={"Objects": [{"Key": key} for key in batch], "Quiet": True},
+        )

@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Annotated, List, Optional
+import os
 
 import typer
 
@@ -47,6 +48,59 @@ def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="
     :return:
     """
     remote.pull(Torrent(torrent), Remote(), force)
+
+
+@app.command("delete")
+@app.command("rm")
+def delete(
+        torrent: str,
+        yes: bool = typer.Option(False, "--yes", "-y", help="Confirm deletion of this torrent's exclusive remote objects."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview what would be deleted without removing objects."),
+):
+    """
+    删除远端模型（仅删除该 torrent 独有对象；仍被其他模型引用的 chunk 会保留）
+    """
+    remote.delete(Torrent(torrent), Remote(), yes=yes, dry_run=dry_run)
+
+
+@app.command()
+def du():
+    """
+    查询当前存储桶总大小与总文件数量
+    """
+    remote.du(Remote())
+
+
+@app.command()
+def config(
+        show: bool = typer.Option(False, "--show", help="Show current config path and non-secret values."),
+):
+    """
+    交互式配置远端存储（首次使用远端命令时也会自动引导）
+    """
+    from express.base.config import (
+        apply_config_to_env,
+        config_path,
+        ensure_remote_config,
+        load_config,
+        missing_required_keys,
+    )
+
+    if show:
+        data = load_config()
+        apply_config_to_env(data)
+        typer.echo(f"Config file: {config_path()}")
+        typer.echo(f"Exists: {config_path().is_file()}")
+        for key in ("S3_AK", "S3_ENDPOINT", "S3_BUCKET", "LOCAL_WORKDIR"):
+            value = os.getenv(key)
+            typer.echo(f"{key}={value if value else '(unset)'}")
+        typer.echo(f"S3_SK={'******' if os.getenv('S3_SK') else '(unset)'}")
+        missing = missing_required_keys()
+        if missing:
+            typer.echo(f"Missing: {', '.join(missing)}")
+        return
+
+    ensure_remote_config(force_interactive=True)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
