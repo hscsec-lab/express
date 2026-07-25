@@ -170,7 +170,7 @@ def _prompt_field(field: ConfigField, default: Optional[str], *, index: int, tot
         value = raw or (default or "")
         if value:
             return value
-        console.print("不能为空。Ctrl+B 或输入 - 可返回上一项。")
+        console.print("Value required. Press Ctrl+B or type - to go back.")
 
 
 def _mask(value: str) -> str:
@@ -183,7 +183,7 @@ def interactive_configure(existing: Optional[Dict[str, str]] = None, *, first_ru
     existing = existing or {}
     console.print("Express first-time setup: configure remote storage." if first_run else "Express configuration.")
     console.print(f"Config file: {config_path()}")
-    console.print("输错了按 [bold]Ctrl+B[/bold] 回到上一项；也可以输入 [bold]-[/bold] 后回车。")
+    console.print("Made a mistake? Press [bold]Ctrl+B[/bold] to go back, or type [bold]-[/bold] and Enter.")
 
     answers: Dict[str, str] = {}
     index = 0
@@ -197,10 +197,10 @@ def interactive_configure(existing: Optional[Dict[str, str]] = None, *, first_ru
             index += 1
         except GoBack:
             if index == 0:
-                console.print("已经是第一项了。")
+                console.print("Already at the first field.")
                 continue
             index -= 1
-            console.print(f"← 回到 {CONFIG_FIELDS[index].label}")
+            console.print(f"<- Back to {CONFIG_FIELDS[index].label}")
 
     return answers
 

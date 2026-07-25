@@ -13,7 +13,7 @@ app = typer.Typer(
 @app.command()
 def edit(torrent: str, remote_file_name: str):
     """
-    在线编辑远程文件
+    Edit a remote file online.
     """
     from express.base.client import Remote
     from express.base.data import Torrent
@@ -25,7 +25,7 @@ def edit(torrent: str, remote_file_name: str):
 @app.command()
 def push(model_path: Path):
     """
-    推送模型
+    Push a local model to remote storage.
     """
     from express.base import remote
     from express.base.client import Remote
@@ -36,9 +36,9 @@ def push(model_path: Path):
 
 
 @app.command()
-def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="Automatically overwrite local files when local files and cloud hashes do not match.")):
+def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="Overwrite local files when local and remote hashes do not match.")):
     """
-    拉取模型
+    Pull a remote model by torrent.
     """
     from express.base import remote
     from express.base.client import Remote
@@ -55,7 +55,8 @@ def delete(
         dry_run: bool = typer.Option(False, "--dry-run", help="Preview what would be deleted without removing objects."),
 ):
     """
-    删除远端模型（仅删除该 torrent 独有对象；仍被其他模型引用的 chunk 会保留）
+    Delete a remote model. Only removes the torrent index and exclusive chunks;
+    chunks still referenced by other models are kept.
     """
     from express.base import remote
     from express.base.client import Remote
@@ -67,7 +68,7 @@ def delete(
 @app.command()
 def du():
     """
-    查询当前存储桶总大小与总文件数量
+    Show total object count and size of the configured bucket.
     """
     from express.base import remote
     from express.base.client import Remote
@@ -80,7 +81,7 @@ def config(
         show: bool = typer.Option(False, "--show", help="Show current config path and non-secret values."),
 ):
     """
-    交互式配置远端存储（首次使用远端命令时也会自动引导）
+    Interactively configure remote storage (also prompted on first remote use).
     """
     from express.base.config import (
         apply_config_to_env,
@@ -110,7 +111,7 @@ def config(
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def info(torrent: str, ctx: typer.Context):
     """
-    查看torrent信息
+    Show torrent metadata.
     """
     from express.base.data import Torrent
     from express.base.model import _info
@@ -122,7 +123,7 @@ def info(torrent: str, ctx: typer.Context):
 def create(model_path: Path, authors="default_author", emails="default@email.com", version="0.1.0", tags=None,
            name=None):
     """
-    创建模型
+    Create model metadata.
     """
     from express.base.model import Model
 
@@ -140,7 +141,7 @@ def create(model_path: Path, authors="default_author", emails="default@email.com
 def init(model_path: Path, authors="default_author", emails="default@email.com", version="0.1.0", tags=None,
          name=None):
     """
-    初始化模型
+    Initialize model metadata (alias of create).
     """
     create(model_path=model_path,
            authors=authors,
@@ -153,7 +154,7 @@ def init(model_path: Path, authors="default_author", emails="default@email.com",
 @app.command()
 def clear(model_path: Path):
     """
-    清除模型元数据
+    Remove local model metadata and index files.
     """
     from express.base.model import Model
 
@@ -165,7 +166,7 @@ def clear(model_path: Path):
 @app.command()
 def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="Only print torrent ids (script-friendly)")):
     """
-    列出远程模型及其 torrent
+    List remote models and their torrents.
     """
     from express.base import remote
     from express.base.client import Remote
@@ -182,9 +183,9 @@ def search(
         version: Optional[str] = typer.Option(None, "--version", "-V", help="Filter by version (substring)"),
 ):
     """
-    搜索远程模型并显示对应 torrent。
+    Search remote models and show matching torrents.
 
-    示例:
+    Examples:
       express search hive
       express search hive 128k
       express search --tag LBM
@@ -211,7 +212,7 @@ def view(
         calc_er: bool = typer.Option(False, "--er", help="Whether to calculate the Effective Rank (ER)"),
 ):
     """
-    查看模型信息
+    View model structure and optional diagnostics.
     """
     from express.base.model import Model
     from express.functions.view_model import view_model
@@ -232,8 +233,9 @@ def compute(
         )
 ):
     """
-    支持多模型复杂的四则运算。
-    示例: A=m1.bin B=m2.bin "(A + B) * 0.5"
+    Evaluate multi-model arithmetic expressions.
+
+    Example: A=m1.bin B=m2.bin "(A + B) * 0.5"
     """
     from express.base.model import Model, evaluate_model_expression
 
