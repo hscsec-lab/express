@@ -35,13 +35,8 @@ class GoBack(Exception):
 
 
 def config_dir() -> Path:
-    """Return the OS-standard per-user config directory for express."""
-    if sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+    """Return ~/.config/express (honors $XDG_CONFIG_HOME when set)."""
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
     return base / "express"
 
 

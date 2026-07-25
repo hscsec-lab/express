@@ -60,3 +60,9 @@ def test_back_tokens_and_default_workdir():
     assert ":back" in BACK_TOKENS
     assert isinstance(GoBack(), GoBack)
     assert Path(default_local_workdir()).name == "models"
+
+
+def test_config_path_uses_xdg_config_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+    assert cfg.config_dir() == tmp_path / ".config" / "express"
+    assert cfg.config_path() == tmp_path / ".config" / "express" / "config.json"
