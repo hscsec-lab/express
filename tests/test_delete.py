@@ -1,6 +1,6 @@
 from express.base.file import FolderIndex, FileMetadata, fast_checksum
 from express.base.model import MODEL_INDEX_FILE_NAME
-from express.base.remote import _content_keys_from_index, plan_chunk_deletion
+from express.base.remote import _get_content_keys_from_index, plan_chunk_deletion
 
 
 def test_content_keys_skip_index_file(tmp_path):
@@ -18,7 +18,7 @@ def test_content_keys_skip_index_file(tmp_path):
             file_relative_path=MODEL_INDEX_FILE_NAME,
         ),
     ])
-    keys = _content_keys_from_index(index)
+    keys = _get_content_keys_from_index(index)
     assert fast_checksum(payload) in keys
     assert "index-hash" not in keys
 

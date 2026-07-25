@@ -31,18 +31,18 @@ def _format_bytes(num: float) -> str:
     return f"{num:.1f} PB"
 
 
-def _index_remote_key(torrent: Torrent) -> str:
+def _get_index_remote_key(torrent: Torrent) -> str:
     return f"{torrent}.{MODEL_INDEX_FILE_NAME}"
 
 
-def _torrent_from_index_key(index_key: str) -> Torrent:
+def _get_torrent_from_index_key(index_key: str) -> Torrent:
     suffix = f".{MODEL_INDEX_FILE_NAME}"
     if not index_key.endswith(suffix):
         raise ValueError(f"Not an index key: {index_key}")
     return Torrent(index_key[: -len(suffix)])
 
 
-def _content_keys_from_index(index: FolderIndex) -> Set[str]:
+def _get_content_keys_from_index(index: FolderIndex) -> Set[str]:
     """Content-addressed object keys for a model (excludes the torrent index object)."""
     keys: Set[str] = set()
     for file_metadata in index.folder_index:
@@ -61,7 +61,7 @@ def plan_chunk_deletion(owned_keys: Set[str], referenced_keys: Set[str]) -> Tupl
 
 def _load_remote_index(remote: Remote, torrent: Torrent, retries: int = 5) -> FolderIndex:
     """Load a remote folder index via GetObject, with retries for transient S3/R2 errors."""
-    index_key = _index_remote_key(torrent)
+    index_key = _get_index_remote_key(torrent)
     last_error: Exception | None = None
     for attempt in range(retries):
         try:
@@ -79,7 +79,7 @@ def _load_remote_index(remote: Remote, torrent: Torrent, retries: int = 5) -> Fo
     raise RuntimeError(f"Failed to load remote index after {retries} retries: {index_key}") from last_error
 
 
-def _referenced_chunks(remote: Remote, exclude_torrent: Torrent | None = None) -> Set[str]:
+def _get_referenced_chunks(remote: Remote, exclude_torrent: Torrent | None = None) -> Set[str]:
     """
     Collect content chunk keys still referenced by other remote model indexes.
 
@@ -96,7 +96,7 @@ def _referenced_chunks(remote: Remote, exclude_torrent: Torrent | None = None) -
     with catalog_progress() as progress:
         task_id = progress.add_task("Scanning references", total=len(index_keys))
         for index_key in index_keys:
-            torrent = _torrent_from_index_key(index_key)
+            torrent = _get_torrent_from_index_key(index_key)
             if exclude_torrent is not None and torrent == exclude_torrent:
                 progress.advance(task_id)
                 continue
@@ -106,7 +106,7 @@ def _referenced_chunks(remote: Remote, exclude_torrent: Torrent | None = None) -
                 raise RuntimeError(
                     f"Aborting delete: cannot verify references from index {index_key}: {exc}"
                 ) from exc
-            referenced |= _content_keys_from_index(index)
+            referenced |= _get_content_keys_from_index(index)
             progress.advance(task_id)
     return referenced
 
@@ -131,21 +131,21 @@ def delete(torrent: Torrent, remote: Remote, yes: bool = False, dry_run: bool = 
     Always removes the torrent index. Content chunks are removed only when no other
     remote model index still references them, so shared objects are never orphaned.
     """
-    index_key = _index_remote_key(torrent)
+    index_key = _get_index_remote_key(torrent)
     assert is_remote_file_exists(remote.s3_client, remote.s3_bucket, index_key), "Remote index does not exist."
 
     # Validate torrent payload early so we fail before mutating storage.
     metadata = from_torrent(torrent, Metadata)
     index = _load_remote_index(remote, torrent)
-    owned_keys = _content_keys_from_index(index)
+    owned_keys = _get_content_keys_from_index(index)
     exclusive_keys, shared_keys = plan_chunk_deletion(
         owned_keys,
-        _referenced_chunks(remote, exclude_torrent=torrent),
+        _get_referenced_chunks(remote, exclude_torrent=torrent),
     )
 
     size_by_key = {obj["Key"]: obj["Size"] for obj in list_objects(remote)}
-    missing_owned = sorted(key for key in owned_keys if key not in size_by_key)
-    delete_keys = sorted(exclusive_keys | {index_key})
+    missing_owned = [key for key in owned_keys if key not in size_by_key]
+    delete_keys = list(exclusive_keys | {index_key})
     delete_bytes = sum(size_by_key.get(key, 0) for key in delete_keys)
     keep_bytes = sum(size_by_key.get(key, 0) for key in shared_keys)
 

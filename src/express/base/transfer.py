@@ -35,7 +35,8 @@ def push_chunk(
 
     callback = None
     if session is not None:
-        callback = session.begin_file(Path(local_file_path).name, file_size(local_file_path))
+        session.on_start(Path(local_file_path).name, file_size(local_file_path))
+        callback = session.on_progress
 
     remote.s3_client.upload_file(
         str(local_file_path),
@@ -44,7 +45,7 @@ def push_chunk(
         Callback=callback,
     )
     if session is not None:
-        session.finish_file()
+        session.on_finish()
 
 
 def push_file(
@@ -109,7 +110,8 @@ def pull_file(
 
     callback = None
     if session is not None:
-        callback = session.begin_file(local_file_path.name, total_bytes)
+        session.on_start(local_file_path.name, total_bytes)
+        callback = session.on_progress
 
     remote.s3_client.download_file(
         remote.s3_bucket,
@@ -118,7 +120,7 @@ def pull_file(
         Callback=callback,
     )
     if session is not None:
-        session.finish_file()
+        session.on_finish()
     return local_file_path
 
 

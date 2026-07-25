@@ -34,7 +34,8 @@ def from_torrent(torrent: Torrent, expect_type: Type[T]) -> T:
     return expect_type.model_validate_json(json_str)
 
 
-def _field_text(value: Any) -> str:
+def _as_text(value: Any) -> str:
+    """Normalize None / scalar / list values into searchable plain text."""
     if value is None:
         return ""
     if isinstance(value, list):
@@ -77,12 +78,12 @@ def search_models(
     words = [part.lower() for part in (query or "").split() if part.strip()]
 
     def match(item: T) -> bool:
-        item_name = _field_text(getattr(item, "name", None))
-        item_authors = _field_text(getattr(item, "authors", None))
-        item_emails = _field_text(getattr(item, "emails", None))
-        item_version = _field_text(getattr(item, "version", None))
+        item_name = _as_text(getattr(item, "name", None))
+        item_authors = _as_text(getattr(item, "authors", None))
+        item_emails = _as_text(getattr(item, "emails", None))
+        item_version = _as_text(getattr(item, "version", None))
         item_tags = getattr(item, "tags", None) or []
-        tags_text = _field_text(item_tags)
+        tags_text = _as_text(item_tags)
 
         if name and name.lower() not in item_name.lower():
             return False
