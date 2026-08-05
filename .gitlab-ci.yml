@@ -7,10 +7,12 @@ include:
     file: 'docker/docker.yml'
 
 stages:
+  - test
   - build
 
 variables:
-  PYTHON_IMAGE: python:3.12
+  # Use the internal registry image (public docker.io pulls often hang on shared runners).
+  PYTHON_IMAGE: docker.cat/docker/python:3.12
   CI_RUNNER_TAGS: "共享"
   REGISTRY_PROJECT_PATH: "gitlab/$CI_PROJECT_NAME"
   FINAL_IMAGE_NAME: ${CI_PROJECT_NAME}
@@ -19,3 +21,32 @@ variables:
   REGISTRY_PASSWORD: $Docker_CI_REGISTRY_PASSWORD
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
   CACHE_REPO: "$Docker_CI_REGISTRY/$REGISTRY_PROJECT_PATH/cache"
+
+# Lightweight unit tests (avoid installing torch/transformers).
+test:unit:
+  stage: test
+  image: "$PYTHON_IMAGE"
+  tags: ["$CI_RUNNER_TAGS"]
+  timeout: 15 minutes
+  variables:
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  before_script:
+    - |
+      set -e
+      pip config set global.index-url http://pypi.dog.cat/root/pypi/+simple
+      pip config set global.trusted-host pypi.dog.cat
+      if ! pip install --quiet --dry-run pip >/dev/null 2>&1; then
+        echo "Internal PyPI unreachable, falling back to Huawei Cloud."
+        pip config set global.index-url https://repo.huaweicloud.com/repository/pypi/simple
+        pip config unset global.trusted-host || true
+      else
+        echo "Using internal PyPI: http://pypi.dog.cat"
+      fi
+      python -m pip install -U pip
+      pip install "pytest>=9.0.2" pydantic rich typer boto3
+  script:
+    - pytest
+  rules:
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "trigger"
