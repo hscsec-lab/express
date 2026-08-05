@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ast
 import importlib
 import json
@@ -6,21 +8,19 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Optional, List, Type
+from typing import TYPE_CHECKING, Optional, List, Any
 
 import rich
-import torch
 from pydantic import BaseModel, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
-from tqdm import tqdm
-from transformers import PreTrainedModel, AutoTokenizer, AutoModel, Qwen3_5MoeForConditionalGeneration, \
-    AutoModelForCausalLM, AutoConfig, AutoModelForImageTextToText, AutoModelForSeq2SeqLM, \
-    AutoModelForAudioFrameClassification, PretrainedConfig
+from rich.pretty import Pretty
 
 from express import console
 from express.base.data import from_torrent, Torrent, get_torrent
 from express.base.file import generate_index, FolderIndex
-from rich.pretty import Pretty
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel, PretrainedConfig
 
 SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 MODEL_INDEX_FILE_NAME = os.getenv("MODEL_INDEX_FILE_NAME", 'express-index.json')
@@ -96,12 +96,14 @@ class Model:
         self.metadata_file_name = METADATA_FILE_NAME
         self.path = path
         self.folder_index: FolderIndex = self.write_index_file()  # Overwrite to the latest index each time it is called
-        self._model_instance: Optional[PreTrainedModel] = None  # Lazy load model instance
+        self._model_instance: Optional[Any] = None  # Lazy load model instance
 
         assert self.path.is_dir(), f"{self.path} must be directory."
 
     @staticmethod
     def _compute_tensors(sd_a, sd_b, op_func):
+        import torch
+
         with torch.no_grad():
             common_keys = set(sd_a.keys()) & set(sd_b.keys())
             for key in common_keys:
@@ -110,6 +112,8 @@ class Model:
         return sd_a
 
     def _apply_op(self, other, op_func) -> "Model":
+        import torch
+
         model_a = self.model
         sd_a = model_a.state_dict()
 
@@ -152,6 +156,8 @@ class Model:
         """
         Main entry point for loading the model with caching mechanism and automated dispatching.
         """
+        from transformers import AutoConfig
+
         if self._model_instance is not None:
             return self._model_instance
 
@@ -172,6 +178,13 @@ class Model:
         """
         Determines the appropriate AutoModel class based on the provided configuration mapping.
         """
+        from transformers import (
+            AutoModelForAudioFrameClassification,
+            AutoModelForCausalLM,
+            AutoModelForImageTextToText,
+            AutoModelForSeq2SeqLM,
+        )
+
         dispatch_map = [
             (AutoModelForImageTextToText, "vision-language"),
             (AutoModelForSeq2SeqLM, "audio-seq2seq/omni"),
@@ -205,6 +218,8 @@ class Model:
         """
         Executes the actual model loading logic, handling accelerate integration or manual device placement.
         """
+        import torch
+
         offload_folder = os.getenv("OFFLOAD_FOLDER", "/tmp/.cache")
 
         if importlib.util.find_spec("accelerate"):
@@ -224,6 +239,8 @@ class Model:
         """
         Save Model instance to a new temporary directory and return a new Model object pointing to it.
         """
+        from transformers import AutoTokenizer
+
         temp_dir = Path(tempfile.mkdtemp(prefix="model_op_", suffix=suffix))
         console.print(f"Saving model to {temp_dir}")
         instance.save_pretrained(temp_dir)

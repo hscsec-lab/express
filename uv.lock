@@ -202,15 +202,14 @@ wheels = [
 
 [[package]]
 name = "express"
-version = "0.2.0"
-source = { virtual = "." }
+version = "0.4.0"
+source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "boto3" },
     { name = "dill" },
     { name = "joblib" },
     { name = "pydantic" },
-    { name = "pytest" },
     { name = "rich" },
     { name = "simple-file-checksum" },
     { name = "textual" },
@@ -220,14 +219,19 @@ dependencies = [
     { name = "typer" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "accelerate", specifier = ">=1.13.0" },
-    { name = "boto3", specifier = "==1.42.9" },
+    { name = "boto3", specifier = ">=1.42.9" },
     { name = "dill", specifier = ">=0.4.0" },
     { name = "joblib", specifier = ">=1.5.3" },
     { name = "pydantic", specifier = ">=2.12.5" },
-    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.2" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "simple-file-checksum", specifier = ">=1.3.1" },
     { name = "textual", specifier = ">=8.2.4" },
@@ -236,6 +240,7 @@ requires-dist = [
     { name = "transformers", specifier = ">=5.5.0" },
     { name = "typer", specifier = ">=0.20.0" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "filelock"

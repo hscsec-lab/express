@@ -1,14 +1,8 @@
 from pathlib import Path
-from typing import Annotated, List, Optional
+from typing import List, Optional
+import os
 
 import typer
-
-from express.base import remote
-from express.base.data import Torrent
-from express.functions.edit_file import edit_file
-from express.base.model import Model, _info, evaluate_model_expression
-from express.base.remote import Remote
-from express.functions.view_model import view_model
 
 app = typer.Typer(
     name="express",
@@ -19,44 +13,109 @@ app = typer.Typer(
 @app.command()
 def edit(torrent: str, remote_file_name: str):
     """
-    在线编辑远程文件
-    :param torrent:
-    :param remote_file_name:
-    :return:
+    Edit a remote file online.
     """
+    from express.base.client import Remote
+    from express.base.data import Torrent
+    from express.functions.edit_file import edit_file
+
     edit_file(Remote(), Torrent(torrent), remote_file_name)
 
 
 @app.command()
 def push(model_path: Path):
     """
-    推送模型
-    :param model_path:
-    :return:
+    Push a local model to remote storage.
     """
+    from express.base import remote
+    from express.base.client import Remote
+    from express.base.model import Model
+
     model: Model = Model(path=model_path)
     remote.push(model, Remote())
 
 
 @app.command()
-def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="Automatically overwrite local files when local files and cloud hashes do not match.")):
+def pull(torrent: str, force: bool = typer.Option(False, "--force", "-f", help="Overwrite local files when local and remote hashes do not match.")):
     """
-    拉取模型
-    :param torrent:
-    :param force:
-    :return:
+    Pull a remote model by torrent.
     """
+    from express.base import remote
+    from express.base.client import Remote
+    from express.base.data import Torrent
+
     remote.pull(Torrent(torrent), Remote(), force)
+
+
+@app.command("delete")
+@app.command("rm")
+def delete(
+        torrent: str,
+        yes: bool = typer.Option(False, "--yes", "-y", help="Confirm deletion of this torrent's exclusive remote objects."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview what would be deleted without removing objects."),
+):
+    """
+    Delete a remote model. Only removes the torrent index and exclusive chunks;
+    chunks still referenced by other models are kept.
+    """
+    from express.base import remote
+    from express.base.client import Remote
+    from express.base.data import Torrent
+
+    remote.delete(Torrent(torrent), Remote(), yes=yes, dry_run=dry_run)
+
+
+@app.command()
+def du():
+    """
+    Show total object count and size of the configured bucket.
+    """
+    from express.base import remote
+    from express.base.client import Remote
+
+    remote.du(Remote())
+
+
+@app.command()
+def config(
+        show: bool = typer.Option(False, "--show", help="Show current config path and non-secret values."),
+):
+    """
+    Interactively configure remote storage (also prompted on first remote use).
+    """
+    from express.base.config import (
+        apply_config_to_env,
+        config_path,
+        ensure_remote_config,
+        load_config,
+        missing_required_keys,
+    )
+
+    if show:
+        data = load_config()
+        apply_config_to_env(data)
+        typer.echo(f"Config file: {config_path()}")
+        typer.echo(f"Exists: {config_path().is_file()}")
+        for key in ("S3_AK", "S3_ENDPOINT", "S3_BUCKET", "LOCAL_WORKDIR"):
+            value = os.getenv(key)
+            typer.echo(f"{key}={value if value else '(unset)'}")
+        typer.echo(f"S3_SK={'******' if os.getenv('S3_SK') else '(unset)'}")
+        missing = missing_required_keys()
+        if missing:
+            typer.echo(f"Missing: {', '.join(missing)}")
+        return
+
+    ensure_remote_config(force_interactive=True)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def info(torrent: str, ctx: typer.Context):
     """
-    查看torrent信息
-    :param torrent:
-    :param ctx:
-    :return:
+    Show torrent metadata.
     """
+    from express.base.data import Torrent
+    from express.base.model import _info
+
     _info(Torrent(torrent), fields=[arg[2:] for arg in ctx.args if arg.startswith('--')])
 
 
@@ -64,15 +123,10 @@ def info(torrent: str, ctx: typer.Context):
 def create(model_path: Path, authors="default_author", emails="default@email.com", version="0.1.0", tags=None,
            name=None):
     """
-    创建模型
-    :param model_path:
-    :param authors:
-    :param emails:
-    :param version:
-    :param tags:
-    :param name:
-    :return:
+    Create model metadata.
     """
+    from express.base.model import Model
+
     if not name:
         name = model_path.name
     model = Model(Path(name))
@@ -87,14 +141,7 @@ def create(model_path: Path, authors="default_author", emails="default@email.com
 def init(model_path: Path, authors="default_author", emails="default@email.com", version="0.1.0", tags=None,
          name=None):
     """
-    初始化模型
-    :param model_path:
-    :param authors:
-    :param emails:
-    :param version:
-    :param tags:
-    :param name:
-    :return:
+    Initialize model metadata (alias of create).
     """
     create(model_path=model_path,
            authors=authors,
@@ -107,34 +154,54 @@ def init(model_path: Path, authors="default_author", emails="default@email.com",
 @app.command()
 def clear(model_path: Path):
     """
-    清除模型元数据
-    :param model_path:
-    :return:
+    Remove local model metadata and index files.
     """
+    from express.base.model import Model
+
     model = Model(model_path)
     model.remove_metadata()
     model.remove_index_file()
 
 
 @app.command()
-def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="Display the torrent list")):
+def ls(torrent: bool = typer.Option(False, "--torrent", "-t", help="Only print torrent ids (script-friendly)")):
     """
-    获取远程模型列表
-    :param torrent:
-    :return:
+    List remote models and their torrents.
     """
+    from express.base import remote
+    from express.base.client import Remote
+
     remote.ls(remote=Remote(), torrent=torrent)
 
 
 @app.command()
-def search(field: str, value: str):
+def search(
+        query: Optional[List[str]] = typer.Argument(None, help="Free text; multiple words are AND-matched"),
+        name: Optional[str] = typer.Option(None, "--name", "-n", help="Filter by model name (substring)"),
+        tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag (substring)"),
+        author: Optional[str] = typer.Option(None, "--author", "-a", help="Filter by author (substring)"),
+        version: Optional[str] = typer.Option(None, "--version", "-V", help="Filter by version (substring)"),
+):
     """
-    搜索远程模型
-    :param field:
-    :param value:
-    :return:
+    Search remote models and show matching torrents.
+
+    Examples:
+      express search hive
+      express search hive 128k
+      express search --tag LBM
+      express search -a stupidfish -n HIVE0.5
     """
-    remote.search(remote=Remote(), field=field, value=value)
+    from express.base import remote
+    from express.base.client import Remote
+
+    remote.search(
+        remote=Remote(),
+        query=" ".join(query) if query else None,
+        name=name,
+        tag=tag,
+        author=author,
+        version=version,
+    )
 
 
 @app.command()
@@ -145,17 +212,15 @@ def view(
         calc_er: bool = typer.Option(False, "--er", help="Whether to calculate the Effective Rank (ER)"),
 ):
     """
-    查看模型信息
-    :param model_path: 模型路径
-    :param diff_with: 对比差异的模型路径，逻辑为Model(diff_with) - Model(model_path)
-    :param calc_fp:
-    :param calc_er:
-    :return:
+    View model structure and optional diagnostics.
     """
+    from express.base.model import Model
+    from express.functions.view_model import view_model
+
     model = Model(model_path)
     if diff_with:
         target_model = Model(diff_with)
-        view_model(target_model - model,calc_fp,calc_er)
+        view_model(target_model - model, calc_fp, calc_er)
     else:
         view_model(model, calc_fp, calc_er)
 
@@ -168,9 +233,12 @@ def compute(
         )
 ):
     """
-    支持多模型复杂的四则运算。
-    示例: A=m1.bin B=m2.bin "(A + B) * 0.5"
+    Evaluate multi-model arithmetic expressions.
+
+    Example: A=m1.bin B=m2.bin "(A + B) * 0.5"
     """
+    from express.base.model import Model, evaluate_model_expression
+
     if len(args) < 2:
         raise typer.BadParameter("At least one model mapping and a calculation expression must be provided.")
     mappings, expression = args[:-1], args[-1]
@@ -181,4 +249,4 @@ def compute(
         for name, path in [item.split("=", 1)]
     }
 
-    result = evaluate_model_expression(expression, model_map)
+    evaluate_model_expression(expression, model_map)
