@@ -1,3 +1,13 @@
+"""
+Safetensors storage: split/merge tensor blobs for sync.
+
+Round-trip goal is **semantic** equivalence (same tensor names, dtypes, shapes, payload
+bytes, and ``__metadata__`` when present) as loaded by the official ``safetensors``
+library. Rebuilt files are **not** guaranteed to be byte-identical to the original:
+header JSON may differ in length, key order, or spacing; tensor data is re-packed
+contiguously in ``tensor_order``.
+"""
+
 from __future__ import annotations
 
 import json
@@ -6,9 +16,22 @@ import struct
 from pathlib import Path
 from typing import Any, Callable
 
-from express.base.storage.base import ProcessResult, StorageBlob, StorageUnitHandler, sha256_bytes, sha256_file_range
+from express.base.file import fast_range_digest
+from express.base.storage.base import ProcessResult, StorageBlob, StorageUnitHandler, sha256_bytes
 
 STORAGE_UNIT = "safetensors_v1"
+PART_DIGEST_FAST = "fast_range_v1"
+PART_DIGEST_FULL = "sha256_full"
+SAFETENSORS_METADATA_KEY = "__metadata__"
+
+
+def _is_tensor_entry(entry: Any) -> bool:
+    return isinstance(entry, dict) and "data_offsets" in entry
+
+
+def _tensor_names_from_header(header: dict[str, Any]) -> list[str]:
+    """Tensor keys only (excludes ``__metadata__`` and other non-tensor header entries)."""
+    return [name for name in header if _is_tensor_entry(header[name])]
 
 
 def _parse_header(raw: memoryview) -> tuple[dict[str, Any], list[str], int]:
@@ -27,7 +50,8 @@ def _parse_header(raw: memoryview) -> tuple[dict[str, Any], list[str], int]:
 def _read_safetensors_layout(path: Path) -> tuple[dict[str, Any], list[str], list[bytes]]:
     """Load all tensor bytes (small files / tests only)."""
     raw = path.read_bytes()
-    header, order, header_end = _parse_header(memoryview(raw))
+    header, _, header_end = _parse_header(memoryview(raw))
+    order = _tensor_names_from_header(header)
     data_base = header_end
     blobs: list[bytes] = []
     for name in order:
@@ -49,9 +73,19 @@ def _sha256_mmap_range(mm: mmap.mmap, start: int, length: int, chunk_size: int =
     return hasher.hexdigest()
 
 
+def _part_content_hash(mm: mmap.mmap, start: int, length: int, digest_mode: str) -> str:
+    if digest_mode == PART_DIGEST_FAST:
+        return fast_range_digest(mm, start, length)
+    if digest_mode == PART_DIGEST_FULL:
+        return _sha256_mmap_range(mm, start, length)
+    raise ValueError(f"unknown part digest mode: {digest_mode!r}")
+
+
 def _compose_safetensors(header: dict[str, Any], order: list[str], blobs: dict[str, bytes]) -> bytes:
     offset = 0
     rebuilt: dict[str, Any] = {}
+    if SAFETENSORS_METADATA_KEY in header:
+        rebuilt[SAFETENSORS_METADATA_KEY] = header[SAFETENSORS_METADATA_KEY]
     for name in order:
         if name not in header:
             raise KeyError(f"missing tensor header for {name!r}")
@@ -105,7 +139,8 @@ class SafetensorsHandler(StorageUnitHandler):
 
         with path.open("rb") as handle:
             with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                header, order, data_base = _parse_header(memoryview(mm))
+                header, _, data_base = _parse_header(memoryview(mm))
+                order = _tensor_names_from_header(header)
                 total = len(order)
                 for index, name in enumerate(order, start=1):
                     start, end = header[name]["data_offsets"]
@@ -113,7 +148,9 @@ class SafetensorsHandler(StorageUnitHandler):
                     byte_length = end - start
                     if on_tensor is not None:
                         on_tensor(name, index, total)
-                    content_hash = _sha256_mmap_range(mm, abs_start, byte_length)
+                    content_hash = _part_content_hash(
+                        mm, abs_start, byte_length, PART_DIGEST_FAST
+                    )
                     parts.append({"name": name, "content_hash": content_hash, "byte_length": byte_length})
                     storage_blobs.append(
                         StorageBlob(
@@ -126,6 +163,7 @@ class SafetensorsHandler(StorageUnitHandler):
 
         manifest = {
             "storage_unit": STORAGE_UNIT,
+            "part_digest": PART_DIGEST_FAST,
             "header": header,
             "tensor_order": order,
             "parts": parts,
@@ -161,19 +199,20 @@ class SafetensorsHandler(StorageUnitHandler):
         computed = manifest_fingerprint(manifest)
         if computed != content_id:
             return False
-        header = manifest["header"]
-        order = manifest["tensor_order"]
-        data_base = None
+        digest_mode = manifest.get("part_digest", PART_DIGEST_FULL)
         with path.open("rb") as handle:
             with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                _, _, data_base = _parse_header(memoryview(mm))
+                file_header, _, data_base = _parse_header(memoryview(mm))
                 for part in manifest["parts"]:
                     name = part["name"]
-                    start, end = header[name]["data_offsets"]
+                    if name not in file_header:
+                        return False  # pragma: no cover
+                    start, end = file_header[name]["data_offsets"]
                     abs_start = data_base + start
                     byte_length = end - start
                     if byte_length != part["byte_length"]:  # pragma: no cover
                         return False
-                    if _sha256_mmap_range(mm, abs_start, byte_length) != part["content_hash"]:  # pragma: no cover
+                    computed = _part_content_hash(mm, abs_start, byte_length, digest_mode)
+                    if computed != part["content_hash"]:  # pragma: no cover
                         return False
         return True

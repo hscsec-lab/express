@@ -1,6 +1,7 @@
 import hashlib
+import mmap
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 from pydantic import BaseModel, field_serializer, field_validator
 
@@ -57,6 +58,40 @@ def fast_checksum(file_path: Path, sample_size: int = 65536, sample_segments: in
 
             hasher.update(f"{file_size}_{stat.st_mtime}".encode())
 
+    return hasher.hexdigest()
+
+
+_Buffer = Union[mmap.mmap, memoryview]
+
+
+def fast_range_digest(
+    buffer: _Buffer,
+    start: int,
+    length: int,
+    *,
+    sample_size: int = 65536,
+    sample_segments: int = 3,
+) -> str:
+    """
+    Sampled SHA256 over a byte range (same idea as ``fast_checksum``).
+
+    Used for sync/dedup fingerprints only — not a tamper-evident digest.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(f"{length}".encode())
+    if length <= 0:
+        return hasher.hexdigest()
+    end = start + length
+    if length <= sample_size * sample_segments:
+        hasher.update(buffer[start:end])
+        return hasher.hexdigest()
+    for i in range(sample_segments):
+        rel = max(
+            0,
+            min((length - sample_size) * i // (sample_segments - 1), length - sample_size),
+        )
+        chunk_start = start + rel
+        hasher.update(buffer[chunk_start : chunk_start + sample_size])
     return hasher.hexdigest()
 
 

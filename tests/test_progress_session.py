@@ -34,6 +34,8 @@ def test_short_label_and_index_progress():
     long_name = "model.language_model.layers.32.mlp.experts.down_proj.weight"
     assert short_label(long_name, 20).startswith("…")
     assert len(short_label(long_name, 20)) == 20
+    assert short_label("hello", 1) == "h"
+    assert short_label("hello", 2) == "…o"
     progress = index_progress()
     task = progress.add_task("Indexing", total=1, tensor="")
     progress.update(task, description="Hash shard", tensor=f"{short_label(long_name, 30)} (1/10)")

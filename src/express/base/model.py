@@ -259,7 +259,8 @@ class Model:
 
         console.print(
             f"Indexing [bold]{short_label(str(self.path), 72)}[/bold] "
-            "(large .safetensors: per-tensor hash, see progress line)…"
+            "(per-tensor index; whole-file hash may differ from HF export — "
+            "`express cmp-safetensors` to compare)…"
         )
         folder_index: FolderIndex = generate_index(self.path)
         with (self.path / MODEL_INDEX_FILE_NAME).open('w', encoding='utf-8') as f:

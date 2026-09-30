@@ -3,7 +3,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from express.base.file import FileMetadata, fast_checksum, generate_index, get_remote_chunk_metadata_from_index
+from express.base.file import (
+    FileMetadata,
+    fast_checksum,
+    fast_range_digest,
+    generate_index,
+    get_remote_chunk_metadata_from_index,
+)
 from express.base.transfer import pull_chunk_bytes, push_chunk_bytes
 
 
@@ -126,3 +132,41 @@ def test_fast_checksum_large_file_sampling(tmp_path):
     h1 = fast_checksum(path)
     h2 = fast_checksum(path)
     assert h1 == h2
+
+
+def test_fast_range_digest_matches_small_range(tmp_path):
+    import mmap
+
+    payload = b"tensor-bytes-for-digest"
+    path = tmp_path / "t.bin"
+    path.write_bytes(payload)
+    with path.open("rb") as handle:
+        with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            assert fast_range_digest(mm, 0, len(payload)) == fast_range_digest(mm, 0, len(payload))
+
+
+def test_fast_range_digest_empty_and_large_sampled(tmp_path):
+    import mmap
+
+    assert fast_range_digest(memoryview(b""), 0, 0) == fast_range_digest(memoryview(b""), 0, 0)
+    path = tmp_path / "big.bin"
+    path.write_bytes(b"x" * (70000 * 4))
+    with path.open("rb") as handle:
+        with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            h1 = fast_range_digest(mm, 0, len(mm))
+            h2 = fast_range_digest(mm, 0, len(mm))
+    assert h1 == h2
+
+
+def test_generate_index_throttles_tensor_callback(tmp_path, monkeypatch):
+    import numpy as np
+    from safetensors.numpy import save_file
+
+    save_file(
+        {"a": np.zeros(4, dtype=np.float32), "b": np.ones(4, dtype=np.float32)},
+        tmp_path / "m.safetensors",
+    )
+    times = iter([0.0, 0.05, 10.0])
+
+    monkeypatch.setattr("time.monotonic", lambda: next(times, 100.0))
+    generate_index(tmp_path)

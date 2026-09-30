@@ -22,6 +22,33 @@ def edit(torrent: str, remote_file_name: str):
     edit_file(Remote(), Torrent(torrent), remote_file_name)
 
 
+@app.command("cmp-safetensors")
+def cmp_safetensors(
+        left: Path = typer.Argument(..., help="First .safetensors file"),
+        right: Path = typer.Argument(..., help="Second .safetensors file"),
+):
+    """
+    Check whether two safetensors files are tensor-equivalent (names, dtypes, shapes, values, metadata).
+
+    Whole-file byte hashes may differ even when this command reports equivalence.
+    """
+    from express import console
+    from express.base.storage.safetensors_equiv import compare_safetensors_paths
+
+    result = compare_safetensors_paths(left, right)
+    if result.equivalent:
+        console.print(f"[green]✓ Equivalent[/green] {left.name} ≈ {right.name}")
+        if not result.bytes_identical:
+            console.print(
+                "[dim]Files are not byte-identical (expected after Express pull/restore).[/dim]"
+            )
+        return
+    console.print(f"[red]✗ Not equivalent[/red] {left.name} vs {right.name}")
+    for line in result.differences:
+        console.print(f"  • {line}")
+    raise typer.Exit(1)
+
+
 @app.command()
 def push(model_path: Path):
     """

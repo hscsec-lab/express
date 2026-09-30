@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator, Optional
 
 from rich.progress import (
     BarColumn,
@@ -20,6 +20,9 @@ from rich.progress import (
 from rich.table import Column
 
 from express import console
+
+if TYPE_CHECKING:
+    from express.base.cleanup import CleanupScope
 
 
 def short_label(text: str, max_len: int = 42) -> str:
@@ -81,9 +84,10 @@ class TransferSession:
     Shows overall file completion plus the active file's byte progress.
     """
 
-    def __init__(self, title: str, total_files: int):
+    def __init__(self, title: str, total_files: int, *, cleanup: Optional["CleanupScope"] = None):
         self.title = title
         self.total_files = max(total_files, 0)
+        self.cleanup = cleanup
         self.progress = Progress(
             SpinnerColumn(),
             TextColumn("[bold]{task.description}"),

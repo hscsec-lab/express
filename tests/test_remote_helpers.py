@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -64,6 +65,49 @@ def test_pull_model_with_index_plain(tmp_path):
     out.mkdir()
     pull_model_with_index(index, remote, out, force=True)
     assert (out / "chunk").read_bytes() == b"data"
+
+
+def test_push_and_pull_safetensors_hint(tmp_path, capsys):
+    import numpy as np
+    from safetensors.numpy import save_file
+
+    from express.base.model import Model
+    from express.base.storage.registry import build_file_metadata
+
+    model_dir = tmp_path / "m"
+    model_dir.mkdir()
+    save_file({"w": np.array([1.0], dtype=np.float32)}, model_dir / "w.safetensors")
+    model = Model(model_dir)
+    model.create_metadata(name="m", version="0.1.0")
+    meta = build_file_metadata(model_dir / "w.safetensors", Path("w.safetensors"))
+    index = {"folder_index": [meta.model_dump(mode="json")]}
+    from express.base.storage.safetensors import SafetensorsHandler
+
+    blob_bytes = {
+        b.content_hash: b.read_payload()
+        for b in SafetensorsHandler().process(model_dir / "w.safetensors").blobs
+    }
+    remote = MagicMock()
+    remote.s3_bucket = "b"
+    remote.s3_client = MagicMock()
+    remote.s3_client.exceptions.ClientError = ClientError
+    remote.s3_client.head_object.side_effect = ClientError(
+        {"Error": {"Code": "404", "Message": "missing"}}, "HeadObject"
+    )
+    push(model, remote)
+    assert "cmp-safetensors" in capsys.readouterr().out
+
+    capsys.readouterr()
+    out = tmp_path / "out"
+    out.mkdir()
+
+    def fake_download(bucket, key, filename, Callback=None):
+        Path(filename).write_bytes(blob_bytes[key])
+
+    remote.s3_client.download_file.side_effect = fake_download
+    remote.s3_client.head_object.return_value = {"ContentLength": len(next(iter(blob_bytes.values())))}
+    pull_model_with_index(index, remote, out, force=True)
+    assert "cmp-safetensors" in capsys.readouterr().out
 
 
 def test_push_model(tmp_path, monkeypatch):

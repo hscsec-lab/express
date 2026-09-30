@@ -15,6 +15,7 @@ from express.base.data import Torrent, get_torrent, from_torrent, search_models
 from express.base.file import FolderIndex, FileMetadata
 from express.base.storage.registry import content_keys_for_metadata
 from express.base.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
+from express.base.cleanup import managed_transfer
 from express.base.progress import TransferSession, busy_status, catalog_progress
 from express.base.transfer import push_file, pull_file, open_remote_file
 
@@ -265,10 +266,15 @@ def push(model: Model, remote: Remote) -> None:
         "(tensor blobs stream from disk; skipped if already on server)…"
     )
 
-    with TransferSession("Push", total_files=len(folder_index)) as session:
-        for file_metadata in folder_index:
-            push_file(model, remote, file_metadata, model_metadata_torrent, session=session)
+    with managed_transfer("Push") as cleanup:
+        with TransferSession("Push", total_files=len(folder_index), cleanup=cleanup) as session:
+            for file_metadata in folder_index:
+                push_file(model, remote, file_metadata, model_metadata_torrent, session=session)
 
+    if any(fm.storage_unit == "safetensors_v1" for fm in folder_index):
+        from express.base.storage.safetensors_equiv import print_whole_file_hash_hint
+
+        print_whole_file_hash_hint()
     console.print(f"Push completed. Model torrent: {model_metadata_torrent}")
 
 
@@ -276,18 +282,23 @@ def pull_model_with_index(index: dict, remote: Remote, save_path: Path, force: b
     """Pulls all model files defined in the index dictionary to the specified path."""
     folder_index: List[FileMetadata] = FolderIndex(**index).folder_index
     files = [fm for fm in folder_index if MODEL_INDEX_FILE_NAME != fm.file_name]
-    with TransferSession("Pull", total_files=len(files)) as session:
-        for file_metadata in files:
-            download_path = save_path / file_metadata.file_relative_path
-            from express.base.storage.transfer_ops import materialize_local_file
+    with managed_transfer("Pull") as cleanup:
+        with TransferSession("Pull", total_files=len(files), cleanup=cleanup) as session:
+            for file_metadata in files:
+                download_path = save_path / file_metadata.file_relative_path
+                from express.base.storage.transfer_ops import materialize_local_file
 
-            materialize_local_file(
-                remote,
-                file_metadata,
-                download_path,
-                force=force,
-                session=session,
-            )
+                materialize_local_file(
+                    remote,
+                    file_metadata,
+                    download_path,
+                    force=force,
+                    session=session,
+                )
+        if any(fm.storage_unit == "safetensors_v1" for fm in files):
+            from express.base.storage.safetensors_equiv import print_whole_file_hash_hint
+
+            print_whole_file_hash_hint()
     return Model(path=save_path)
 
 

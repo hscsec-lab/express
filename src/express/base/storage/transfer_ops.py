@@ -128,7 +128,17 @@ def _materialize_safetensors(
         from express.base.transfer import pull_chunk_bytes
 
         blobs[content_hash] = pull_chunk_bytes(remote, content_hash, session=session)
-    handler.restore(manifest, blobs, local_file_path)
-    if not handler.verify_local(local_file_path, file_metadata.file_checksum_sha256, manifest):
-        raise RuntimeError(f"restored safetensors failed verification: {local_file_path}")
+
+    cleanup = session.cleanup if session is not None else None
+    if cleanup is not None:
+        cleanup.track_local_file(local_file_path)
+    try:
+        handler.restore(manifest, blobs, local_file_path)
+        if not handler.verify_local(local_file_path, file_metadata.file_checksum_sha256, manifest):
+            raise RuntimeError(f"restored safetensors failed verification: {local_file_path}")
+    except BaseException:
+        raise
+    else:
+        if cleanup is not None:
+            cleanup.clear_local_file(local_file_path)
     return local_file_path
