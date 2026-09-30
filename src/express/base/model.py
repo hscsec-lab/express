@@ -152,9 +152,18 @@ class Model:
         # This handles the case of scalar / model, with slightly different logic
         return self._apply_op(other, lambda a, b: b / (a + 1e-12))
 
-    def _load(self, device: Optional[str] = None, **kwargs) -> PreTrainedModel:
+    def _load(
+            self,
+            device: Optional[str] = None,
+            *,
+            inspection: bool = False,
+            **kwargs,
+    ) -> PreTrainedModel:
         """
         Main entry point for loading the model with caching mechanism and automated dispatching.
+
+        When *inspection* is True (``express view``), loads weights onto a single
+        device without ``device_map="auto"`` so tensors are materialized for analysis.
         """
         from transformers import AutoConfig
 
@@ -166,11 +175,21 @@ class Model:
         load_class = self._determine_load_class(config)
         load_params = self._prepare_load_params(config, **kwargs)
 
-        self._model_instance = self._execute_model_loading(
-            load_class,
-            load_params,
-            device
-        )
+        if inspection:
+            from express.base.compute_device import resolve_compute_device
+
+            target = resolve_compute_device(device)
+            self._model_instance = self._execute_model_loading_inspection(
+                load_class,
+                load_params,
+                target,
+            )
+        else:
+            self._model_instance = self._execute_model_loading(
+                load_class,
+                load_params,
+                device,
+            )
 
         return self._model_instance
 
@@ -234,6 +253,24 @@ class Model:
             **load_params,
             offload_folder=offload_folder
         ).to(target_device)
+
+    def _execute_model_loading_inspection(
+            self,
+            load_class: type,
+            load_params: dict,
+            target_device: str,
+    ) -> PreTrainedModel:
+        """Load full weights onto one device for ``express view`` (no meta/offload map)."""
+        import torch
+
+        offload_folder = os.getenv("OFFLOAD_FOLDER", "/tmp/.cache")
+        params = dict(load_params)
+        params.setdefault("low_cpu_mem_usage", True)
+        model = load_class.from_pretrained(
+            **params,
+            offload_folder=offload_folder,
+        )
+        return model.to(torch.device(target_device))
 
     def _save(self, instance: PreTrainedModel, suffix: str = "_output") -> "Model":
         """

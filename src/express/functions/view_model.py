@@ -131,7 +131,7 @@ def format_params(num: int) -> str:
     return str(num)
 
 
-def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
+def pre_analyze_model(state_dict, calc_fp=False, calc_er=False, *, device: str = "cpu"):
     """
     Revised to handle meta devices and ensure all layers are counted.
     """
@@ -153,16 +153,31 @@ def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
         # If on meta devices, SVD cannot run, skip calculation logic but retain entries
         if not v.is_meta:
             if calc_fp:
-                results[k]["fp"] = SVDAnalyzer.get_svd_fingerprint(v)
+                results[k]["fp"] = SVDAnalyzer.get_svd_fingerprint(v, device=device)
             if calc_er:
-                results[k]["er"] = SVDAnalyzer.get_effective_rank(v)
+                results[k]["er"] = SVDAnalyzer.get_effective_rank(v, device=device)
         else:
             # Optional: Mark the layer as offloaded at FP
             results[k]["fp"] = "[Offloaded]"
 
     return results
 
-def view_model(model: Model, calc_fp=False, calc_er=False):
-    state_dict = model.model.state_dict()
-    data = pre_analyze_model(state_dict, calc_fp, calc_er)
+def view_model(
+        model: Model,
+        *,
+        device: str | None = None,
+        calc_fp: bool | None = None,
+        calc_er: bool | None = None,
+):
+    from express import console
+    from express.base.compute_device import resolve_compute_device, resolve_svd_flags
+
+    resolved_device = resolve_compute_device(device)
+    calc_fp, calc_er = resolve_svd_flags(resolved_device, calc_fp, calc_er)
+    console.print(
+        f"[dim]View: device={resolved_device}, "
+        f"FP={'on' if calc_fp else 'off'}, ER={'on' if calc_er else 'off'}[/dim]"
+    )
+    state_dict = model._load(device=device, inspection=True).state_dict()
+    data = pre_analyze_model(state_dict, calc_fp, calc_er, device=resolved_device)
     UnifiedInspector(model.path.__str__(), data).run()

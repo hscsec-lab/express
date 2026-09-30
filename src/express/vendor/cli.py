@@ -233,23 +233,38 @@ def search(
 
 @app.command()
 def view(
-        model_path: Path = typer.Argument(..., help="Path to the model file"),
+        model_path: Path = typer.Argument(..., help="Path to the model directory"),
         diff_with: Optional[Path] = typer.Option(None, "--diff", "-d", help="Path to the model for comparison"),
-        calc_fp: bool = typer.Option(False, "--fp", help="Whether to calculate the Singular Value Fingerprint (FP)"),
-        calc_er: bool = typer.Option(False, "--er", help="Whether to calculate the Effective Rank (ER)"),
+        device: str = typer.Option(
+            "auto",
+            "--device",
+            "-D",
+            help="Load weights on cpu, cuda, or auto (CUDA when available).",
+        ),
+        calc_fp: Optional[bool] = typer.Option(
+            None,
+            "--fp/--no-fp",
+            help="SVD fingerprint bars (default: on when using CUDA).",
+        ),
+        calc_er: Optional[bool] = typer.Option(
+            None,
+            "--er/--no-er",
+            help="Effective rank (default: on when using CUDA).",
+        ),
 ):
     """
-    View model structure and optional diagnostics.
+    View model structure and optional diagnostics (FP / ER need materialized weights).
     """
     from express.base.model import Model
     from express.functions.view_model import view_model
 
     model = Model(model_path)
+    kwargs = {"device": device, "calc_fp": calc_fp, "calc_er": calc_er}
     if diff_with:
         target_model = Model(diff_with)
-        view_model(target_model - model, calc_fp, calc_er)
+        view_model(target_model - model, **kwargs)
     else:
-        view_model(model, calc_fp, calc_er)
+        view_model(model, **kwargs)
 
 
 @app.command()
