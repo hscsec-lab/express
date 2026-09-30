@@ -1,4 +1,8 @@
 # Python-generated files
+.coverage
+htmlcov/
+pytest-report.xml
+coverage.xml
 __pycache__/
 *.py[oc]
 build/

@@ -9,6 +9,8 @@ class FileMetadata(BaseModel):
     file_name: str
     file_checksum_sha256: str
     file_relative_path: Path
+    storage_unit: str | None = None
+    unit_manifest: dict | None = None
 
     @field_serializer('file_relative_path')
     def serialize_path(self, v: Path) -> str:
@@ -64,18 +66,14 @@ def generate_index(folder_path: Path) -> FolderIndex:
     :param folder_path:
     :return:
     """
+    from express.base.storage.registry import build_file_metadata
+
     folder_index: FolderIndex = FolderIndex(folder_index=[])
     file_metadatas: List[FileMetadata] = []
     for file_path in folder_path.rglob("*"):
         if file_path.is_file():
             relative_path = file_path.relative_to(folder_path)
-            file_metadatas.append(
-                FileMetadata(
-                    file_name=file_path.name,
-                    file_checksum_sha256=fast_checksum(file_path),
-                    file_relative_path=relative_path
-                )
-            )
+            file_metadatas.append(build_file_metadata(file_path, relative_path))
     return FolderIndex(folder_index=file_metadatas)
 
 

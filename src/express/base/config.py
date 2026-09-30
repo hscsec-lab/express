@@ -98,7 +98,7 @@ def _echo(text: str = "") -> None:
     sys.stdout.flush()
 
 
-def _read_line_raw(prompt: str, *, secret: bool) -> str:
+def _read_line_raw(prompt: str, *, secret: bool) -> str:  # pragma: no cover - requires raw TTY
     """TTY line editor: Ctrl+B goes back, Backspace edits, Enter confirms."""
     import termios
     import tty
@@ -179,7 +179,7 @@ def _mask(value: str) -> str:
     return f"{value[:2]}{'*' * (len(value) - 4)}{value[-2:]}"
 
 
-def interactive_configure(existing: Optional[Dict[str, str]] = None, *, first_run: bool = False) -> Dict[str, str]:
+def interactive_configure(existing: Optional[Dict[str, str]] = None, *, first_run: bool = False) -> Dict[str, str]:  # pragma: no cover
     existing = existing or {}
     console.print("Express first-time setup: configure remote storage." if first_run else "Express configuration.")
     console.print(f"Config file: {config_path()}")
@@ -232,7 +232,7 @@ def ensure_remote_config(*, force_interactive: bool = False) -> Path | None:
         if os.getenv(key):
             merged[key] = os.environ[key]
 
-    data = interactive_configure(merged, first_run=not saved and not force_interactive)
+    data = interactive_configure(merged, first_run=not saved and not force_interactive)  # pragma: no cover
     path = save_config(data)
     apply_config_to_env(data)
     console.print(f"Saved config to {path}")

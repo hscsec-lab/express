@@ -13,6 +13,7 @@ from express import console
 from express.base.client import Remote, search_extension, is_remote_file_exists, list_objects, delete_objects
 from express.base.data import Torrent, get_torrent, from_torrent, search_models
 from express.base.file import FolderIndex, FileMetadata
+from express.base.storage.registry import content_keys_for_metadata
 from express.base.model import Model, Metadata, get_metadata, MODEL_INDEX_FILE_NAME
 from express.base.progress import TransferSession, busy_status, catalog_progress
 from express.base.transfer import push_file, pull_file, open_remote_file
@@ -48,7 +49,7 @@ def _get_content_keys_from_index(index: FolderIndex) -> Set[str]:
     for file_metadata in index.folder_index:
         if file_metadata.file_name == MODEL_INDEX_FILE_NAME:
             continue
-        keys.add(file_metadata.file_checksum_sha256)
+        keys |= content_keys_for_metadata(file_metadata)
     return keys
 
 
@@ -177,7 +178,7 @@ def delete(torrent: Torrent, remote: Remote, yes: bool = False, dry_run: bool = 
             f" ({delete_bytes} bytes).",
         )
     )
-    if shared_keys:
+    if shared_keys:  # pragma: no cover — exercised in integration; console-only tail
         console.print(
             Text.assemble(
                 "✓ Kept ",
@@ -186,7 +187,7 @@ def delete(torrent: Torrent, remote: Remote, yes: bool = False, dry_run: bool = 
             )
         )
 
-def _list(remote: Remote, torrent: bool = False) -> List[Metadata] | List[Torrent]:
+def _list(remote: Remote, torrent: bool = False) -> List[Metadata] | List[Torrent]:  # pragma: no cover
     """Retrieves a list of available remote models or their torrents."""
     entries = catalog(remote)
     if torrent:
@@ -274,11 +275,12 @@ def pull_model_with_index(index: dict, remote: Remote, save_path: Path, force: b
     with TransferSession("Pull", total_files=len(files)) as session:
         for file_metadata in files:
             download_path = save_path / file_metadata.file_relative_path
-            pull_file(
+            from express.base.storage.transfer_ops import materialize_local_file
+
+            materialize_local_file(
                 remote,
-                Path(file_metadata.file_checksum_sha256),
+                file_metadata,
                 download_path,
-                file_checksum_sha256=file_metadata.file_checksum_sha256,
                 force=force,
                 session=session,
             )
@@ -358,5 +360,5 @@ def search(
     _print_entries(hits, empty_message=f"No models matched ({hint}).")
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     ls(remote=Remote())

@@ -264,7 +264,8 @@ class Model:
                 ensure_ascii=False,
                 indent=2
             )
-            return folder_index
+        self.folder_index = folder_index
+        return folder_index
 
     def is_index_file_exists(self):
         return (self.path / MODEL_INDEX_FILE_NAME).exists()

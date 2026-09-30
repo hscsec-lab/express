@@ -48,6 +48,41 @@ def push_chunk(
         session.on_finish()
 
 
+def push_chunk_bytes(
+        remote: Remote,
+        payload: bytes,
+        remote_file_name: str,
+        *,
+        force: bool = False,
+        session: Optional[TransferSession] = None,
+) -> None:
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(payload)
+        tmp_path = Path(tmp.name)
+    try:
+        push_chunk(remote, tmp_path, remote_file_name, force=force, session=session)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def pull_chunk_bytes(
+        remote: Remote,
+        remote_file_name: str,
+        session: Optional[TransferSession] = None,
+) -> bytes:
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        pull_file(remote, Path(remote_file_name), tmp_path, None, force=True, session=session)
+        return tmp_path.read_bytes()
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def push_file(
         model: Model,
         remote: Remote,
@@ -56,11 +91,14 @@ def push_file(
         session: Optional[TransferSession] = None,
 ) -> None:
     """Uploads a local file to the remote S3 bucket if it doesn't already exist."""
-    remote_file_name = file_metadata.file_checksum_sha256
+    local_file_path = model.path / file_metadata.file_relative_path
     if file_metadata.file_name == MODEL_INDEX_FILE_NAME:
         remote_file_name = f"{model_metadata_torrent}.{MODEL_INDEX_FILE_NAME}"
-    local_file_path = model.path / file_metadata.file_relative_path
-    push_chunk(remote, local_file_path, remote_file_name, session=session)
+        push_chunk(remote, local_file_path, remote_file_name, session=session)
+        return
+    from express.base.storage.transfer_ops import upload_storage_parts
+
+    upload_storage_parts(remote, local_file_path, file_metadata, session=session)
 
 
 def pull_file(
