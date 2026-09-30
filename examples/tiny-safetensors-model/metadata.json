@@ -1,0 +1,10 @@
+{
+  "authors": "local-dev",
+  "emails": "human@human.com",
+  "version": "0.0.1",
+  "tags": [
+    "dev",
+    "safetensors"
+  ],
+  "name": "tiny-safetensors-model"
+}

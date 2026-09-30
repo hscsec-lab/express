@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Set, Type
+from typing import Callable, Iterable, Set, Type
 
 from express.base.file import FileMetadata
 from express.base.storage.base import StorageUnitHandler
@@ -21,9 +21,17 @@ def resolve_handler(path: Path) -> StorageUnitHandler:
     return PlainFileHandler()
 
 
-def build_file_metadata(file_path: Path, relative_path: Path) -> FileMetadata:
+def build_file_metadata(
+        file_path: Path,
+        relative_path: Path,
+        *,
+        on_tensor: Callable[[str, int, int], None] | None = None,
+) -> FileMetadata:
     handler = resolve_handler(file_path)
-    result = handler.process(file_path)
+    if isinstance(handler, SafetensorsHandler):
+        result = handler.process(file_path, on_tensor=on_tensor)
+    else:
+        result = handler.process(file_path)
     return FileMetadata(
         file_name=file_path.name,
         file_checksum_sha256=result.content_id,

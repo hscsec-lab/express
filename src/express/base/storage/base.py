@@ -5,20 +5,50 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Iterator
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def sha256_file_range(path: Path, offset: int, length: int, chunk_size: int = 8 * 1024 * 1024) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        remaining = length
+        while remaining > 0:
+            block = handle.read(min(chunk_size, remaining))
+            if not block:
+                break
+            hasher.update(block)
+            remaining -= len(block)
+    return hasher.hexdigest()
+
+
 class StorageBlob(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     content_hash: str
-    data: bytes = Field(repr=False)
+    data: bytes = Field(default=b"", repr=False)
+    source_path: Path | None = None
+    byte_offset: int = 0
+    byte_length: int = 0
 
     @property
-    def byte_length(self) -> int:
+    def payload_length(self) -> int:
+        if self.source_path is not None and self.byte_length:
+            return self.byte_length
         return len(self.data)
+
+    def read_payload(self) -> bytes:
+        if self.data:
+            return self.data
+        if self.source_path is not None and self.byte_length:
+            with self.source_path.open("rb") as handle:
+                handle.seek(self.byte_offset)
+                return handle.read(self.byte_length)
+        return b""
 
 
 class ProcessResult(BaseModel):

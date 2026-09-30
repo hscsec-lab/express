@@ -1,0 +1,66 @@
+{
+  "folder_index": [
+    {
+      "file_name": "model.safetensors",
+      "file_checksum_sha256": "7b0e6b0570b73055bd48f5e3bd8aa795249b35f1bb480152e00aa4fdbfbd4803",
+      "file_relative_path": "model.safetensors",
+      "storage_unit": "safetensors_v1",
+      "unit_manifest": {
+        "storage_unit": "safetensors_v1",
+        "header": {
+          "layer.bias": {
+            "dtype": "F32",
+            "shape": [
+              8
+            ],
+            "data_offsets": [
+              0,
+              32
+            ]
+          },
+          "layer.weight": {
+            "dtype": "F32",
+            "shape": [
+              8,
+              8
+            ],
+            "data_offsets": [
+              32,
+              288
+            ]
+          }
+        },
+        "tensor_order": [
+          "layer.bias",
+          "layer.weight"
+        ],
+        "parts": [
+          {
+            "name": "layer.bias",
+            "content_hash": "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925",
+            "byte_length": 32
+          },
+          {
+            "name": "layer.weight",
+            "content_hash": "7dd5b9f46a92c744da53137a24fb006d7a6269dfcece0b4c20facc19395fe828",
+            "byte_length": 256
+          }
+        ]
+      }
+    },
+    {
+      "file_name": "config.json",
+      "file_checksum_sha256": "c74398bdd5fd123a4d24ed04665b12ca1af5fc4323c5718dd928a41d91da37e0",
+      "file_relative_path": "config.json",
+      "storage_unit": "plain",
+      "unit_manifest": null
+    },
+    {
+      "file_name": "metadata.json",
+      "file_checksum_sha256": "441dc3b532356ae0acadfea593d6edfe591cb58d3e290bf74d87a89f6eb60b17",
+      "file_relative_path": "metadata.json",
+      "storage_unit": "plain",
+      "unit_manifest": null
+    }
+  ]
+}

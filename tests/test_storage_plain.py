@@ -20,5 +20,5 @@ def test_plain_roundtrip(tmp_path):
     handler = PlainFileHandler()
     result = handler.process(src)
     dest = tmp_path / "b.bin"
-    handler.restore(None, {result.content_id: result.blobs[0].data}, dest)
+    handler.restore(None, {result.content_id: result.blobs[0].read_payload()}, dest)
     assert dest.read_bytes() == b"payload"

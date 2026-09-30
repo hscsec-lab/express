@@ -82,7 +82,7 @@ def test_push_model(tmp_path, monkeypatch):
         {"Error": {"Code": "404", "Message": "missing"}}, "HeadObject"
     )
     push(model, remote)
-    assert remote.s3_client.upload_file.called
+    assert remote.s3_client.upload_fileobj.called or remote.s3_client.upload_file.called
 
 
 def test_catalog_and_search_empty():

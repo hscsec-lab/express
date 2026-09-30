@@ -14,14 +14,21 @@ class PlainFileHandler(StorageUnitHandler):
     def matches(cls, path: Path) -> bool:
         return path.is_file()
 
-    def process(self, path: Path) -> ProcessResult:
-        data = path.read_bytes()
+    def process(self, path: Path, **kwargs) -> ProcessResult:
         content_id = fast_checksum(path)
+        size = path.stat().st_size
         return ProcessResult(
             storage_unit=self.kind,
             content_id=content_id,
             manifest=None,
-            blobs=[StorageBlob(content_hash=content_id, data=data)],
+            blobs=[
+                StorageBlob(
+                    content_hash=content_id,
+                    source_path=path,
+                    byte_offset=0,
+                    byte_length=size,
+                )
+            ],
         )
 
     def restore(self, manifest: dict | None, blobs: dict[str, bytes], dest: Path) -> None:
@@ -29,6 +36,6 @@ class PlainFileHandler(StorageUnitHandler):
             raise ValueError("plain restore requires exactly one blob")
         if len(blobs) != 1:
             raise ValueError("plain restore expects a single blob")
-        data = next(iter(blobs.values()))
+        chunk = next(iter(blobs.values()))
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
+        dest.write_bytes(chunk)

@@ -260,6 +260,10 @@ def push(model: Model, remote: Remote) -> None:
     assert model.is_metadata_file_exists(), "The model being pushed is missing metadata."
     model_metadata_torrent: Torrent = get_torrent(model.get_metadata())
     folder_index: List[FileMetadata] = model.folder_index.folder_index
+    console.print(
+        f"Uploading [bold]{len(folder_index)}[/bold] indexed file(s) to remote "
+        "(tensor blobs stream from disk; skipped if already on server)…"
+    )
 
     with TransferSession("Push", total_files=len(folder_index)) as session:
         for file_metadata in folder_index:

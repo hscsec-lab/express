@@ -10,6 +10,71 @@ from express.base.client import is_remote_file_exists, Remote
 from express.base.file import FileMetadata, fast_checksum
 from express.base.model import Model, MODEL_INDEX_FILE_NAME
 from express.base.progress import TransferSession, file_size
+from express.base.storage.base import StorageBlob
+
+
+class _FileRangeReader:
+    """File-like reader for upload_fileobj over a byte range."""
+
+    def __init__(self, path: Path, offset: int, length: int):
+        self._handle = path.open("rb")
+        self._handle.seek(offset)
+        self._remaining = length
+
+    def read(self, amt: int = -1) -> bytes:
+        if self._remaining <= 0:
+            return b""
+        if amt < 0 or amt > self._remaining:
+            amt = self._remaining
+        data = self._handle.read(amt)
+        self._remaining -= len(data)
+        return data
+
+    def close(self) -> None:
+        self._handle.close()
+
+
+def push_storage_blob(
+        remote: Remote,
+        blob: StorageBlob,
+        remote_file_name: str | None = None,
+        *,
+        force: bool = False,
+        session: Optional[TransferSession] = None,
+        label: str | None = None,
+) -> None:
+    remote_file_name = remote_file_name or blob.content_hash
+    if is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name) and not force:
+        if session is None:
+            console.print(Text.assemble("✓ Skip ", (remote_file_name[:16] + "…", "dim"), ": exists"))
+        else:
+            session.skip()
+        return
+
+    callback = None
+    display = label or remote_file_name[:24]
+    total = blob.payload_length
+    if session is not None:
+        session.on_start(display, total)
+        callback = session.on_progress
+
+    if blob.source_path is not None and blob.byte_length:
+        reader = _FileRangeReader(blob.source_path, blob.byte_offset, blob.byte_length)
+        try:
+            remote.s3_client.upload_fileobj(
+                reader,
+                remote.s3_bucket,
+                remote_file_name,
+                Callback=callback,
+            )
+        finally:
+            reader.close()
+    else:
+        push_chunk_bytes(remote, blob.read_payload(), remote_file_name, force=force, session=session)
+        return
+
+    if session is not None:
+        session.on_finish()
 
 
 def push_chunk(

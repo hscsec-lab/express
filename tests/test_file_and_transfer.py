@@ -35,11 +35,58 @@ def test_get_remote_chunk_metadata_from_index():
     assert get_remote_chunk_metadata_from_index(index, "missing") is None
 
 
+def test_generate_index_safetensors_shows_progress(tmp_path):
+    import numpy as np
+    from safetensors.numpy import save_file
+
+    save_file({"w": np.array([1.0, 2.0], dtype=np.float32)}, tmp_path / "w.safetensors")
+    idx = generate_index(tmp_path)
+    assert idx.folder_index[0].storage_unit == "safetensors_v1"
+
+
 def test_generate_index_uses_storage_layer(tmp_path):
     (tmp_path / "a.safetensors").write_bytes(b"invalid")
     idx = generate_index(tmp_path)
     assert len(idx.folder_index) == 1
     assert idx.folder_index[0].storage_unit == "plain"
+
+
+def test_file_range_reader_exhausted(tmp_path):
+    from express.base.transfer import _FileRangeReader
+
+    path = tmp_path / "f.bin"
+    path.write_bytes(b"ab")
+    reader = _FileRangeReader(path, 0, 2)
+    assert reader.read(1) == b"a"
+    assert reader.read(10) == b"b"
+    assert reader.read() == b""
+    reader.close()
+
+
+def test_push_storage_blob_from_file_range(tmp_path):
+    from botocore.exceptions import ClientError
+
+    from express.base.storage.base import StorageBlob, sha256_file_range
+    from express.base.transfer import push_storage_blob
+
+    path = tmp_path / "chunk.bin"
+    payload = b"range-payload-data"
+    path.write_bytes(payload)
+    assert sha256_file_range(path, 0, len(payload)) == sha256_file_range(path, 0, len(payload))
+    blob = StorageBlob(content_hash="key", source_path=path, byte_offset=0, byte_length=len(payload))
+    remote = MagicMock()
+    remote.s3_bucket = "bucket"
+    remote.s3_client = MagicMock()
+    remote.s3_client.exceptions.ClientError = ClientError
+    remote.s3_client.head_object.side_effect = ClientError(
+        {"Error": {"Code": "404", "Message": "missing"}}, "HeadObject"
+    )
+
+    def capture_fileobj(fileobj, bucket, key, Callback=None):
+        assert fileobj.read() == payload
+
+    remote.s3_client.upload_fileobj.side_effect = capture_fileobj
+    push_storage_blob(remote, blob, "key")
 
 
 def test_push_and_pull_chunk_bytes(tmp_path):

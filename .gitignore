@@ -24,3 +24,6 @@ tmp
 express-delete-probe/
 .env
 .env.*
+!.env.local.example
+.config/
+.local-models/

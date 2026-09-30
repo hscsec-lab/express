@@ -23,7 +23,7 @@ def test_upload_storage_parts_deduplicates_identical_tensors(tmp_path):
         {"Error": {"Code": "404", "Message": "missing"}}, "HeadObject"
     )
     upload_storage_parts(remote, path, meta)
-    upload_calls = remote.s3_client.upload_file.call_count
+    upload_calls = remote.s3_client.upload_fileobj.call_count + remote.s3_client.upload_file.call_count
     assert upload_calls == 1
 
 
@@ -31,9 +31,10 @@ def test_materialize_safetensors_from_remote(tmp_path):
     path = tmp_path / "m.safetensors"
     save_file({"w": np.array([1.0, 2.0], dtype=np.float32)}, path)
     meta = build_file_metadata(path, path.name)
-    blobs = {b.content_hash: b.data for b in __import__(
+    processed = __import__(
         "express.base.storage.safetensors", fromlist=["SafetensorsHandler"]
-    ).SafetensorsHandler().process(path).blobs}
+    ).SafetensorsHandler().process(path)
+    blobs = {b.content_hash: b.read_payload() for b in processed.blobs}
 
     remote = MagicMock()
     remote.s3_bucket = "bucket"

@@ -34,7 +34,7 @@ def test_process_restore_roundtrip(tmp_path):
     result = handler.process(path)
     assert result.storage_unit == "safetensors_v1"
     assert len(result.blobs) == 2
-    blobs = {blob.content_hash: blob.data for blob in result.blobs}
+    blobs = {blob.content_hash: blob.read_payload() for blob in result.blobs}
     restored = tmp_path / "out.safetensors"
     handler.restore(result.manifest, blobs, restored)
     assert restored.read_bytes() == original

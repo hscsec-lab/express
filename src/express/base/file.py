@@ -66,14 +66,40 @@ def generate_index(folder_path: Path) -> FolderIndex:
     :param folder_path:
     :return:
     """
+    from express.base.model import MODEL_INDEX_FILE_NAME
+    from express.base.progress import catalog_progress
+    from express.base.remote import _format_bytes
     from express.base.storage.registry import build_file_metadata
 
-    folder_index: FolderIndex = FolderIndex(folder_index=[])
+    candidates = sorted(
+        (
+            path
+            for path in folder_path.rglob("*")
+            if path.is_file() and path.name != MODEL_INDEX_FILE_NAME
+        ),
+        key=lambda p: p.stat().st_size,
+        reverse=True,
+    )
+
     file_metadatas: List[FileMetadata] = []
-    for file_path in folder_path.rglob("*"):
-        if file_path.is_file():
+    with catalog_progress() as progress:
+        task_id = progress.add_task("Indexing files", total=max(len(candidates), 1))
+        for file_path in candidates:
             relative_path = file_path.relative_to(folder_path)
-            file_metadatas.append(build_file_metadata(file_path, relative_path))
+            size_label = _format_bytes(file_path.stat().st_size)
+            progress.update(task_id, description=f"Hash {file_path.name} ({size_label})")
+
+            def on_tensor(name: str, index: int, total: int, *, fname=file_path.name) -> None:
+                progress.update(
+                    task_id,
+                    description=f"Hash {fname} tensor {name} ({index}/{total})",
+                )
+
+            file_metadatas.append(
+                build_file_metadata(file_path, relative_path, on_tensor=on_tensor)
+            )
+            progress.advance(task_id)
+
     return FolderIndex(folder_index=file_metadatas)
 
 

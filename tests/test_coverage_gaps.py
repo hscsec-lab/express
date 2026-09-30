@@ -41,7 +41,7 @@ def test_search_models_email_and_version_filters():
 
 def test_storage_blob_byte_length():
     blob = StorageBlob(content_hash="h", data=b"1234")
-    assert blob.byte_length == 4
+    assert blob.payload_length == 4
 
 
 def test_verify_local_manifest_mismatch(tmp_path):

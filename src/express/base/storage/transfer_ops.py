@@ -1,15 +1,36 @@
 from __future__ import annotations
 
-import tempfile
+import struct
 from pathlib import Path
 from typing import Optional
 
 from express.base.client import Remote
 from express.base.file import FileMetadata
 from express.base.progress import TransferSession
+from express.base.storage.base import StorageBlob
 from express.base.storage.registry import resolve_handler
 from express.base.storage.safetensors import SafetensorsHandler
-from express.base.transfer import push_chunk, pull_chunk_bytes
+from express.base.transfer import push_storage_blob
+
+
+def _blobs_from_manifest_file(path: Path, manifest: dict) -> list[StorageBlob]:
+    with path.open("rb") as handle:
+        header_size = struct.unpack("<Q", handle.read(8))[0]
+        data_base = 8 + header_size
+    header = manifest["header"]
+    blobs: list[StorageBlob] = []
+    for part in manifest["parts"]:
+        name = part["name"]
+        start, end = header[name]["data_offsets"]
+        blobs.append(
+            StorageBlob(
+                content_hash=part["content_hash"],
+                source_path=path,
+                byte_offset=data_base + start,
+                byte_length=part["byte_length"],
+            )
+        )
+    return blobs
 
 
 def upload_storage_parts(
@@ -21,19 +42,32 @@ def upload_storage_parts(
         session: Optional[TransferSession] = None,
 ) -> None:
     handler = resolve_handler(local_file_path)
-    result = handler.process(local_file_path)
+    manifest = file_metadata.unit_manifest
+
+    if (
+        file_metadata.storage_unit == SafetensorsHandler.kind
+        and manifest
+        and isinstance(handler, SafetensorsHandler)
+        and handler.verify_local(local_file_path, file_metadata.file_checksum_sha256, manifest)
+    ):
+        blobs = _blobs_from_manifest_file(local_file_path, manifest)
+    else:
+        result = handler.process(local_file_path)
+        blobs = list(result.blobs)
+
     seen: set[str] = set()
-    for blob in result.iter_blobs():
+    for blob in blobs:
         if blob.content_hash in seen:
             continue
         seen.add(blob.content_hash)
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(blob.data)
-            tmp_path = Path(tmp.name)
-        try:
-            push_chunk(remote, tmp_path, blob.content_hash, force=force, session=session)
-        finally:
-            tmp_path.unlink(missing_ok=True)
+        push_storage_blob(
+            remote,
+            blob,
+            blob.content_hash,
+            force=force,
+            session=session,
+            label=local_file_path.name,
+        )
 
 
 def materialize_local_file(
@@ -91,6 +125,8 @@ def _materialize_safetensors(
     blobs: dict[str, bytes] = {}
     for part in manifest.get("parts", []):
         content_hash = part["content_hash"]
+        from express.base.transfer import pull_chunk_bytes
+
         blobs[content_hash] = pull_chunk_bytes(remote, content_hash, session=session)
     handler.restore(manifest, blobs, local_file_path)
     if not handler.verify_local(local_file_path, file_metadata.file_checksum_sha256, manifest):
