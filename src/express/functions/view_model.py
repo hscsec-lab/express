@@ -168,19 +168,48 @@ def view_model(
         device: str | None = None,
         calc_fp: bool | None = None,
         calc_er: bool | None = None,
+        structure_only: bool = False,
+        full_load: bool = False,
 ):
     from express import console
     from express.base.compute_device import resolve_compute_device, resolve_svd_flags
+    from express.base.load_memory import (
+        check_inspection_memory_fits,
+        inspection_memory_shortfall,
+    )
 
     resolved_device = resolve_compute_device(device)
     calc_fp, calc_er = resolve_svd_flags(resolved_device, calc_fp, calc_er)
-    from express.base.load_memory import check_inspection_memory_fits
+    if structure_only and (calc_fp or calc_er):
+        raise RuntimeError(
+            "FP/ER require materialized weights; drop --structure-only or enable --full-load."
+        )
+
+    needs_materialized = calc_fp or calc_er or full_load
+    shortfall = None if structure_only else inspection_memory_shortfall(model.path, resolved_device)
+
+    if needs_materialized:
+        if shortfall is not None:
+            check_inspection_memory_fits(model.path, resolved_device)
+        load_mode = "full"
+    elif shortfall is not None:
+        load_mode = "structure"
+        console.print(
+            "[dim]Structure-only view: not enough memory to load all weights; "
+            "using accelerate meta/disk offload (param counts & shapes only; "
+            "FP/ER off). Same behavior as Express before full-load inspection.[/dim]"
+        )
+    else:
+        load_mode = "full"
 
     console.print(
-        f"[dim]View: device={resolved_device}, "
+        f"[dim]View: device={resolved_device}, mode={load_mode}, "
         f"FP={'on' if calc_fp else 'off'}, ER={'on' if calc_er else 'off'}[/dim]"
     )
-    check_inspection_memory_fits(model.path, resolved_device)
-    state_dict = model._load(device=device, inspection=True).state_dict()
+
+    if load_mode == "full":
+        state_dict = model._load(device=device, inspection=True).state_dict()
+    else:
+        state_dict = model._load(device=device, inspection=False).state_dict()
     data = pre_analyze_model(state_dict, calc_fp, calc_er, device=resolved_device)
     UnifiedInspector(model.path.__str__(), data).run()

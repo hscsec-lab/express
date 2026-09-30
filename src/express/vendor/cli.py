@@ -251,6 +251,16 @@ def view(
             "--er/--no-er",
             help="Effective rank (default: on when using CUDA).",
         ),
+        structure_only: bool = typer.Option(
+            False,
+            "--structure-only",
+            help="Never load full weights; use meta/offload (large models on limited RAM).",
+        ),
+        full_load: bool = typer.Option(
+            False,
+            "--full-load",
+            help="Always materialize all weights (fails pre-check if memory insufficient).",
+        ),
 ):
     """
     View model structure and optional diagnostics (FP / ER need materialized weights).
@@ -259,7 +269,13 @@ def view(
     from express.functions.view_model import view_model
 
     model = Model(model_path)
-    kwargs = {"device": device, "calc_fp": calc_fp, "calc_er": calc_er}
+    kwargs = {
+        "device": device,
+        "calc_fp": calc_fp,
+        "calc_er": calc_er,
+        "structure_only": structure_only,
+        "full_load": full_load,
+    }
     if diff_with:
         target_model = Model(diff_with)
         view_model(target_model - model, **kwargs)

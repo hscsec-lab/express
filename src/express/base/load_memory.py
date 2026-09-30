@@ -64,6 +64,51 @@ def _format_bytes(num: int) -> str:
     return f"{num / 1024:.2f} PiB"
 
 
+def inspection_memory_shortfall(
+        model_dir: Path,
+        device: str,
+        *,
+        weight_bytes: int | None = None,
+        headroom: float = 1.20,
+) -> tuple[int, int, int] | None:
+    """
+    If full materialized load likely exceeds free memory, return
+    ``(weights, needed_with_headroom, available)``; otherwise ``None``.
+    """
+    weights = weight_bytes if weight_bytes is not None else estimate_weight_bytes(model_dir)
+    if weights <= 0:
+        return None
+
+    needed = int(weights * headroom)
+    available = available_device_memory_bytes(device)
+    if available is None:
+        return None
+
+    if needed <= available:
+        return None
+    return weights, needed, available
+
+
+def _insufficient_memory_message(device: str, weights: int, needed: int, available: int) -> str:
+    target = "GPU VRAM" if device == "cuda" else "system RAM"
+    hints = [
+        f"weights ~{_format_bytes(weights)} (need ~{_format_bytes(needed)} with headroom), "
+        f"only ~{_format_bytes(available)} free on {device}.",
+    ]
+    if device == "cuda":
+        hints.append(
+            "Free GPU memory, use a larger GPU, or run "
+            "`express view ... --device cpu --no-fp --no-er` for structure-only (meta/offload)."
+        )
+    else:
+        hints.append(
+            "Use `express view ... --no-fp --no-er` to browse structure without full RAM load "
+            "(accelerate meta/disk offload, like older Express), or free RAM / use `--full-load` "
+            "only if you accept swap/OOM risk."
+        )
+    return f"Insufficient {target} to materialize all weights: " + " ".join(hints)
+
+
 def check_inspection_memory_fits(
         model_dir: Path,
         device: str,
@@ -72,27 +117,15 @@ def check_inspection_memory_fits(
         headroom: float = 1.20,
 ) -> None:
     """
-    Raise ``RuntimeError`` if free memory on *device* is likely insufficient.
+    Raise ``RuntimeError`` if free memory on *device* is likely insufficient for a full load.
 
     *headroom* accounts for allocator overhead (default 20%).
     Skips the check when weight size or host RAM is unknown.
     """
-    weights = weight_bytes if weight_bytes is not None else estimate_weight_bytes(model_dir)
-    if weights <= 0:
-        return
-
-    needed = int(weights * headroom)
-    available = available_device_memory_bytes(device)
-    if available is None:
-        return
-
-    if needed <= available:
-        return
-
-    target = "GPU VRAM" if device == "cuda" else "system RAM"
-    raise RuntimeError(
-        f"Insufficient {target} to load this model for inspection: "
-        f"weights ~{_format_bytes(weights)} (need ~{_format_bytes(needed)} with headroom), "
-        f"but only ~{_format_bytes(available)} free on {device}. "
-        f"Try `express view ... --device cpu`, free memory, or use a machine with more {target}."
+    shortfall = inspection_memory_shortfall(
+        model_dir, device, weight_bytes=weight_bytes, headroom=headroom
     )
+    if shortfall is None:
+        return
+    weights, needed, available = shortfall
+    raise RuntimeError(_insufficient_memory_message(device, weights, needed, available))

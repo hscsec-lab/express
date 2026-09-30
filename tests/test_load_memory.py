@@ -40,6 +40,21 @@ def test_check_fits_cuda(monkeypatch, tmp_path):
         check_inspection_memory_fits(tmp_path, "cuda", weight_bytes=1000, headroom=1.0)
 
 
+def test_shortfall_and_messages(tmp_path, monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda: (100, 1000))
+    from express.base.load_memory import (
+        _insufficient_memory_message,
+        inspection_memory_shortfall,
+    )
+
+    assert inspection_memory_shortfall(tmp_path, "cuda", weight_bytes=200, headroom=1.0)
+    msg = _insufficient_memory_message("cpu", 1000, 1200, 500)
+    assert "--no-fp" in msg and "meta/disk offload" in msg
+
+
 def test_check_passes_when_enough(monkeypatch, tmp_path):
     import torch
 
