@@ -44,10 +44,9 @@ variables:
 unit_tests:
   stage: unit
   image: "$PYTHON_IMAGE"
-  tags: ["$CI_RUNNER_TAGS"]
+  tags:
+    - 共享
   timeout: 20 minutes
-  inherit:
-    variables: false
   variables:
     PIP_INDEX_URL: "http://pypi.dog.cat/root/pypi/+simple/"
     PIP_TRUSTED_HOST: "pypi.dog.cat"
@@ -93,7 +92,8 @@ unit_tests:
 prepare-dev-version:
   stage: publish
   image: "$PYTHON_IMAGE"
-  tags: ["$CI_RUNNER_TAGS"]
+  tags:
+    - 共享
   timeout: 5 minutes
   script:
     - |
