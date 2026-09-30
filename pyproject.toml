@@ -53,7 +53,7 @@ Repository = "https://gitlab.cyberspike.top/aszl/diamond-shovel/al-1s/hive/expre
 "Merge requests" = "https://gitlab.cyberspike.top/aszl/diamond-shovel/al-1s/hive/express/-/merge_requests"
 
 [project.scripts]
-express = "express.vendor.cli:app"
+express = "express.vendor.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -76,6 +76,7 @@ omit = [
     "src/express/base/model.py",
     "src/express/functions/*",
     "src/express/vendor/cli.py",
+    "src/express/vendor/completion.py",
     "src/express/base/config.py",
     "src/express/base/s3.py",
 ]

@@ -62,3 +62,4 @@ PY
 export LOCAL_WORKDIR="${LOCAL_WORKDIR:-$ROOT/.local-models}"
 echo "venv: $(which python)"
 echo "CLI:  express --help"
+echo "Tab:  express completion install   # once per shell"
