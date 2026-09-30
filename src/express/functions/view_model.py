@@ -174,10 +174,13 @@ def view_model(
 
     resolved_device = resolve_compute_device(device)
     calc_fp, calc_er = resolve_svd_flags(resolved_device, calc_fp, calc_er)
+    from express.base.load_memory import check_inspection_memory_fits
+
     console.print(
         f"[dim]View: device={resolved_device}, "
         f"FP={'on' if calc_fp else 'off'}, ER={'on' if calc_er else 'off'}[/dim]"
     )
+    check_inspection_memory_fits(model.path, resolved_device)
     state_dict = model._load(device=device, inspection=True).state_dict()
     data = pre_analyze_model(state_dict, calc_fp, calc_er, device=resolved_device)
     UnifiedInspector(model.path.__str__(), data).run()
