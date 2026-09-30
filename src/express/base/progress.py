@@ -17,8 +17,20 @@ from rich.progress import (
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
+from rich.table import Column
 
 from express import console
+
+
+def short_label(text: str, max_len: int = 42) -> str:
+    """Truncate long paths/tensor names for fixed-width progress rows."""
+    if max_len < 2:
+        return text[:max_len]
+    if len(text) <= max_len:
+        return text
+    if max_len == 2:
+        return "…" + text[-1]
+    return f"…{text[-(max_len - 1):]}"
 
 
 @contextmanager
@@ -39,6 +51,26 @@ def catalog_progress() -> Progress:
         TimeRemainingColumn(),
         console=console,
         transient=True,
+    )
+
+
+def index_progress() -> Progress:
+    """Progress UI for local folder indexing (incl. per-tensor safetensors hashing)."""
+    return Progress(
+        SpinnerColumn(),
+        TextColumn(
+            "[progress.description]{task.description}",
+            table_column=Column(max_width=34, overflow="ellipsis"),
+        ),
+        TextColumn(
+            "[dim]{task.fields[tensor]}[/dim]",
+            table_column=Column(max_width=46, overflow="ellipsis"),
+        ),
+        BarColumn(bar_width=18),
+        MofNCompleteColumn(),
+        console=console,
+        transient=True,
+        expand=False,
     )
 
 

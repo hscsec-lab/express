@@ -1,7 +1,14 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from express.base.progress import TransferSession, busy_status, catalog_progress, file_size
+from express.base.progress import (
+    TransferSession,
+    busy_status,
+    catalog_progress,
+    file_size,
+    index_progress,
+    short_label,
+)
 
 
 def test_transfer_session_lifecycle(tmp_path):
@@ -20,6 +27,16 @@ def test_busy_status_and_catalog_progress():
     progress = catalog_progress()
     task = progress.add_task("scan", total=2)
     progress.advance(task)
+    progress.stop()
+
+
+def test_short_label_and_index_progress():
+    long_name = "model.language_model.layers.32.mlp.experts.down_proj.weight"
+    assert short_label(long_name, 20).startswith("…")
+    assert len(short_label(long_name, 20)) == 20
+    progress = index_progress()
+    task = progress.add_task("Indexing", total=1, tensor="")
+    progress.update(task, description="Hash shard", tensor=f"{short_label(long_name, 30)} (1/10)")
     progress.stop()
 
 

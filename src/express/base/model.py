@@ -255,9 +255,11 @@ class Model:
         return self._load()
 
     def write_index_file(self) -> FolderIndex:
+        from express.base.progress import short_label
+
         console.print(
-            f"Indexing [bold]{self.path}[/bold] "
-            "(large .safetensors are hashed per-tensor; progress bar below)…"
+            f"Indexing [bold]{short_label(str(self.path), 72)}[/bold] "
+            "(large .safetensors: per-tensor hash, see progress line)…"
         )
         folder_index: FolderIndex = generate_index(self.path)
         with (self.path / MODEL_INDEX_FILE_NAME).open('w', encoding='utf-8') as f:

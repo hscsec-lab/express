@@ -67,7 +67,9 @@ def generate_index(folder_path: Path) -> FolderIndex:
     :return:
     """
     from express.base.model import MODEL_INDEX_FILE_NAME
-    from express.base.progress import catalog_progress
+    import time
+
+    from express.base.progress import index_progress, short_label
     from express.base.remote import _format_bytes
     from express.base.storage.registry import build_file_metadata
 
@@ -82,17 +84,31 @@ def generate_index(folder_path: Path) -> FolderIndex:
     )
 
     file_metadatas: List[FileMetadata] = []
-    with catalog_progress() as progress:
-        task_id = progress.add_task("Indexing files", total=max(len(candidates), 1))
+    with index_progress() as progress:
+        task_id = progress.add_task(
+            "Indexing files",
+            total=max(len(candidates), 1),
+            tensor="",
+        )
         for file_path in candidates:
             relative_path = file_path.relative_to(folder_path)
             size_label = _format_bytes(file_path.stat().st_size)
-            progress.update(task_id, description=f"Hash {file_path.name} ({size_label})")
+            progress.update(
+                task_id,
+                description=f"Hash {short_label(file_path.name, 28)} ({size_label})",
+                tensor="",
+            )
+            last_tensor_update = [0.0]
 
             def on_tensor(name: str, index: int, total: int, *, fname=file_path.name) -> None:
+                now = time.monotonic()
+                if index != total and now - last_tensor_update[0] < 0.2:
+                    return
+                last_tensor_update[0] = now
                 progress.update(
                     task_id,
-                    description=f"Hash {fname} tensor {name} ({index}/{total})",
+                    description=f"Hash {short_label(fname, 28)}",
+                    tensor=f"{short_label(name, 38)} ({index}/{total})",
                 )
 
             file_metadatas.append(

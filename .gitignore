@@ -27,3 +27,4 @@ express-delete-probe/
 !.env.local.example
 .config/
 .local-models/
+.benchmark-run/
