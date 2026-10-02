@@ -6,8 +6,63 @@ import typer
 
 app = typer.Typer(
     name="express",
-    no_args_is_help=True
+    no_args_is_help=True,
+    add_completion=True,
+    rich_markup_mode="rich",
 )
+
+completion_app = typer.Typer(
+    name="completion",
+    help="Tab completion for subcommands and options (Typer/Click).",
+    no_args_is_help=True,
+)
+app.add_typer(completion_app)
+
+
+@completion_app.command("install")
+def completion_install(
+        shell: Optional[str] = typer.Option(
+            None,
+            "--shell",
+            help="bash, zsh, or fish (default: detect from $SHELL).",
+        ),
+):
+    """
+    Install shell tab completion for the current user.
+
+    Equivalent to ``express --install-completion``; completes ``push``, ``view --device``, etc.
+    """
+    from express.vendor.completion import ShellName, install_completion
+
+    parsed: ShellName | None
+    if shell is None:
+        parsed = None
+    elif shell not in ("bash", "zsh", "fish"):
+        raise typer.BadParameter("shell must be bash, zsh, or fish")
+    else:
+        parsed = shell  # type: ignore[assignment]
+    install_completion(parsed)
+
+
+@completion_app.command("show")
+def completion_show(
+        shell: Optional[str] = typer.Option(
+            None,
+            "--shell",
+            help="bash, zsh, or fish (default: detect from $SHELL).",
+        ),
+):
+    """Print completion script to stdout (``eval`` manually if needed)."""
+    from express.vendor.completion import ShellName, show_completion
+
+    parsed: ShellName | None
+    if shell is None:
+        parsed = None
+    elif shell not in ("bash", "zsh", "fish"):
+        raise typer.BadParameter("shell must be bash, zsh, or fish")
+    else:
+        parsed = shell  # type: ignore[assignment]
+    show_completion(parsed)
 
 
 @app.command()
@@ -20,6 +75,33 @@ def edit(torrent: str, remote_file_name: str):
     from express.functions.edit_file import edit_file
 
     edit_file(Remote(), Torrent(torrent), remote_file_name)
+
+
+@app.command("cmp-safetensors")
+def cmp_safetensors(
+        left: Path = typer.Argument(..., help="First .safetensors file"),
+        right: Path = typer.Argument(..., help="Second .safetensors file"),
+):
+    """
+    Check whether two safetensors files are tensor-equivalent (names, dtypes, shapes, values, metadata).
+
+    Whole-file byte hashes may differ even when this command reports equivalence.
+    """
+    from express import console
+    from express.base.storage.safetensors_equiv import compare_safetensors_paths
+
+    result = compare_safetensors_paths(left, right)
+    if result.equivalent:
+        console.print(f"[green]✓ Equivalent[/green] {left.name} ≈ {right.name}")
+        if not result.bytes_identical:
+            console.print(
+                "[dim]Files are not byte-identical (expected after Express pull/restore).[/dim]"
+            )
+        return
+    console.print(f"[red]✗ Not equivalent[/red] {left.name} vs {right.name}")
+    for line in result.differences:
+        console.print(f"  • {line}")
+    raise typer.Exit(1)
 
 
 @app.command()
@@ -206,23 +288,54 @@ def search(
 
 @app.command()
 def view(
-        model_path: Path = typer.Argument(..., help="Path to the model file"),
+        model_path: Path = typer.Argument(..., help="Path to the model directory"),
         diff_with: Optional[Path] = typer.Option(None, "--diff", "-d", help="Path to the model for comparison"),
-        calc_fp: bool = typer.Option(False, "--fp", help="Whether to calculate the Singular Value Fingerprint (FP)"),
-        calc_er: bool = typer.Option(False, "--er", help="Whether to calculate the Effective Rank (ER)"),
+        device: str = typer.Option(
+            "auto",
+            "--device",
+            "-D",
+            help="Load weights on cpu, cuda, or auto (CUDA when available).",
+        ),
+        calc_fp: Optional[bool] = typer.Option(
+            None,
+            "--fp/--no-fp",
+            help="SVD fingerprint bars (default: on when using CUDA).",
+        ),
+        calc_er: Optional[bool] = typer.Option(
+            None,
+            "--er/--no-er",
+            help="Effective rank (default: on when using CUDA).",
+        ),
+        structure_only: bool = typer.Option(
+            False,
+            "--structure-only",
+            help="Never load full weights; use meta/offload (large models on limited RAM).",
+        ),
+        full_load: bool = typer.Option(
+            False,
+            "--full-load",
+            help="Always materialize all weights (fails pre-check if memory insufficient).",
+        ),
 ):
     """
-    View model structure and optional diagnostics.
+    View model structure and optional diagnostics (FP / ER need materialized weights).
     """
     from express.base.model import Model
     from express.functions.view_model import view_model
 
-    model = Model(model_path)
+    kwargs = {
+        "device": device,
+        "calc_fp": calc_fp,
+        "calc_er": calc_er,
+        "structure_only": structure_only,
+        "full_load": full_load,
+    }
     if diff_with:
+        model = Model(model_path)
         target_model = Model(diff_with)
-        view_model(target_model - model, calc_fp, calc_er)
+        view_model(target_model - model, **kwargs)
     else:
-        view_model(model, calc_fp, calc_er)
+        view_model(model_path, **kwargs)
 
 
 @app.command()
@@ -250,3 +363,11 @@ def compute(
     }
 
     evaluate_model_expression(expression, model_map)
+
+
+def main() -> None:
+    app()
+
+
+if __name__ == "__main__":
+    main()

@@ -11,16 +11,22 @@ memory = Memory(cachedir, verbose=int(os.getenv("JOBLIB_CACHE_DEBUG_LEVEL", 0)))
 
 class SVDAnalyzer:
     @classmethod
-    def get_svd_fingerprint(cls, tensor: torch.Tensor, bins: int = 10) -> str:
+    def get_svd_fingerprint(
+            cls,
+            tensor: torch.Tensor,
+            bins: int = 10,
+            *,
+            device: str = "cpu",
+    ) -> str:
         if tensor.ndim < 2: return ""
         # Convert to float32 numpy to resolve BF16 errors and adapt to joblib caching
         matrix_np = tensor.detach().cpu().contiguous().to(torch.float32).numpy()
-        return cls._cached_fingerprint_calc(matrix_np, bins)
+        return cls._cached_fingerprint_calc(matrix_np, bins, device)
 
     @staticmethod
     @memory.cache
-    def _cached_fingerprint_calc(matrix_np: np.ndarray, bins: int) -> str:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def _cached_fingerprint_calc(matrix_np: np.ndarray, bins: int, device: str = "cpu") -> str:
+        device = torch.device(device)
 
         matrix = torch.from_numpy(matrix_np).to(device).float()
         if matrix.ndim > 2:
@@ -47,18 +53,18 @@ class SVDAnalyzer:
                 torch.cuda.empty_cache()
 
     @classmethod
-    def get_effective_rank(cls, tensor: torch.Tensor) -> float:
+    def get_effective_rank(cls, tensor: torch.Tensor, *, device: str = "cpu") -> float:
         """
         Uses the same caching mechanism to significantly speed up repeated analyses.
         """
         if tensor.ndim < 2: return 0.0
         matrix_np = tensor.detach().to(torch.float32).cpu().numpy()
-        return cls._cached_er_calc(matrix_np)
+        return cls._cached_er_calc(matrix_np, device)
 
     @staticmethod
     @memory.cache
-    def _cached_er_calc(matrix_np: np.ndarray) -> float:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def _cached_er_calc(matrix_np: np.ndarray, device: str = "cpu") -> float:
+        device = torch.device(device)
         matrix = torch.from_numpy(matrix_np).to(device).float()
         if matrix.ndim > 2:
             matrix = matrix.flatten(start_dim=1)

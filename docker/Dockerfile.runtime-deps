@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1
+# Heavy runtime stack (torch, transformers, …). Rebuild & push when dependencies change:
+#   docker build -f docker/Dockerfile.runtime-deps \
+#     -t docker.cat/gitlab/express/runtime-deps:py3.12 .
+#   docker push docker.cat/gitlab/express/runtime-deps:py3.12
+
+ARG PYTHON_IMAGE=docker.cat/docker/python:3.12
+FROM ${PYTHON_IMAGE}
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=http://pypi.dog.cat/root/pypi/+simple/ \
+    PIP_TRUSTED_HOST=pypi.dog.cat \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /deps
+COPY docker/requirements.runtime.txt ./requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirements.txt

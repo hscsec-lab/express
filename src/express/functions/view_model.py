@@ -1,9 +1,18 @@
+from pathlib import Path
+from typing import Union
+
 from tqdm import tqdm
 from textual.app import App, ComposeResult
 from textual.widgets import Tree, Header, DataTable, Footer, TabbedContent, TabPane, Static
 
 from express.base.model import Model
 from express.math.SVDAnalyzer import SVDAnalyzer
+
+ModelPath = Union[Path, Model]
+
+
+def _model_dir(target: ModelPath) -> Path:
+    return target.path if isinstance(target, Model) else target
 
 
 class ModelTreeViewer(Static):
@@ -131,17 +140,15 @@ def format_params(num: int) -> str:
     return str(num)
 
 
-def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
+def pre_analyze_model(state_dict, calc_fp=False, calc_er=False, *, device: str = "cpu"):
     """
     Revised to handle meta devices and ensure all layers are counted.
     """
     results = {}
     for k, v in tqdm(state_dict.items(), desc="Analyzing Layers"):
-        # Retrieve basic information (numel and shape are readable even on meta devices)
         num_params = v.numel()
         shape = list(v.shape)
 
-        # Initialize results
         results[k] = {
             "params": num_params,
             "shape": shape,
@@ -149,20 +156,58 @@ def pre_analyze_model(state_dict, calc_fp=False, calc_er=False):
             "er": 0.0
         }
 
-        # Perform SVD only when not on meta devices and calculation is required
-        # If on meta devices, SVD cannot run, skip calculation logic but retain entries
         if not v.is_meta:
             if calc_fp:
-                results[k]["fp"] = SVDAnalyzer.get_svd_fingerprint(v)
+                results[k]["fp"] = SVDAnalyzer.get_svd_fingerprint(v, device=device)
             if calc_er:
-                results[k]["er"] = SVDAnalyzer.get_effective_rank(v)
+                results[k]["er"] = SVDAnalyzer.get_effective_rank(v, device=device)
         else:
-            # Optional: Mark the layer as offloaded at FP
             results[k]["fp"] = "[Offloaded]"
 
     return results
 
-def view_model(model: Model, calc_fp=False, calc_er=False):
-    state_dict = model.model.state_dict()
-    data = pre_analyze_model(state_dict, calc_fp, calc_er)
-    UnifiedInspector(model.path.__str__(), data).run()
+
+def view_model(
+        model_path: ModelPath,
+        *,
+        device: str | None = None,
+        calc_fp: bool | None = None,
+        calc_er: bool | None = None,
+        structure_only: bool = False,
+        full_load: bool = False,
+):
+    from express import console
+    from express.base.compute_device import resolve_compute_device, resolve_svd_flags
+    from express.base.load_memory import check_inspection_memory_fits
+    from express.base.structure_scan import scan_model_structure
+
+    directory = _model_dir(model_path)
+    resolved_device = resolve_compute_device(device)
+    calc_fp, calc_er = resolve_svd_flags(resolved_device, calc_fp, calc_er)
+    if structure_only and (calc_fp or calc_er):
+        raise RuntimeError(
+            "FP/ER require materialized weights; drop --structure-only or use --full-load."
+        )
+
+    needs_materialized = calc_fp or calc_er or full_load
+
+    if needs_materialized:
+        load_mode = "full"
+        check_inspection_memory_fits(directory, resolved_device)
+        console.print(
+            f"[dim]View: device={resolved_device}, mode={load_mode}, "
+            f"FP={'on' if calc_fp else 'off'}, ER={'on' if calc_er else 'off'} "
+            "(loading all weights via transformers)…[/dim]"
+        )
+        model = model_path if isinstance(model_path, Model) else Model(directory)
+        state_dict = model._load(device=device, inspection=True).state_dict()
+        data = pre_analyze_model(state_dict, calc_fp, calc_er, device=resolved_device)
+    else:
+        load_mode = "headers"
+        console.print(
+            f"[dim]View: mode={load_mode} (safetensors headers only, no weight load; "
+            f"FP/ER off). Use --full-load or --fp for diagnostics.[/dim]"
+        )
+        data = scan_model_structure(directory)
+
+    UnifiedInspector(str(directory), data).run()

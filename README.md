@@ -17,6 +17,19 @@ Install quickly using `uv`:
 uv pip install .
 ```
 
+### Shell tab completion
+
+Typer registers completion for **all subcommands** (`push`, `view`, `pull`, …) and **options** (`--device`, `--no-fp`, …). One-time setup:
+
+```shell
+express completion install
+# or: express --install-completion
+# fish: express completion install --shell fish
+```
+
+Restart the terminal, then try `express pu<Tab>` or `express view --<Tab>`.  
+Script only: `express completion show --shell bash`.
+
 ### Configuration
 Set up your S3 credentials in environment variables:
 ```shell

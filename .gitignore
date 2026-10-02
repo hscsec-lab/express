@@ -1,4 +1,8 @@
 # Python-generated files
+.coverage
+htmlcov/
+pytest-report.xml
+coverage.xml
 __pycache__/
 *.py[oc]
 build/
@@ -20,3 +24,7 @@ tmp
 express-delete-probe/
 .env
 .env.*
+!.env.local.example
+.config/
+.local-models/
+.benchmark-run/

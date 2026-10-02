@@ -1,6 +1,7 @@
 import hashlib
+import mmap
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 from pydantic import BaseModel, field_serializer, field_validator
 
@@ -9,6 +10,8 @@ class FileMetadata(BaseModel):
     file_name: str
     file_checksum_sha256: str
     file_relative_path: Path
+    storage_unit: str | None = None
+    unit_manifest: dict | None = None
 
     @field_serializer('file_relative_path')
     def serialize_path(self, v: Path) -> str:
@@ -58,24 +61,96 @@ def fast_checksum(file_path: Path, sample_size: int = 65536, sample_segments: in
     return hasher.hexdigest()
 
 
+_Buffer = Union[mmap.mmap, memoryview]
+
+
+def fast_range_digest(
+    buffer: _Buffer,
+    start: int,
+    length: int,
+    *,
+    sample_size: int = 65536,
+    sample_segments: int = 3,
+) -> str:
+    """
+    Sampled SHA256 over a byte range (same idea as ``fast_checksum``).
+
+    Used for sync/dedup fingerprints only — not a tamper-evident digest.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(f"{length}".encode())
+    if length <= 0:
+        return hasher.hexdigest()
+    end = start + length
+    if length <= sample_size * sample_segments:
+        hasher.update(buffer[start:end])
+        return hasher.hexdigest()
+    for i in range(sample_segments):
+        rel = max(
+            0,
+            min((length - sample_size) * i // (sample_segments - 1), length - sample_size),
+        )
+        chunk_start = start + rel
+        hasher.update(buffer[chunk_start : chunk_start + sample_size])
+    return hasher.hexdigest()
+
+
 def generate_index(folder_path: Path) -> FolderIndex:
     """
     Generate a file index from the given folder.
     :param folder_path:
     :return:
     """
-    folder_index: FolderIndex = FolderIndex(folder_index=[])
+    from express.base.model import MODEL_INDEX_FILE_NAME
+    import time
+
+    from express.base.progress import index_progress, short_label
+    from express.base.remote import _format_bytes
+    from express.base.storage.registry import build_file_metadata
+
+    candidates = sorted(
+        (
+            path
+            for path in folder_path.rglob("*")
+            if path.is_file() and path.name != MODEL_INDEX_FILE_NAME
+        ),
+        key=lambda p: p.stat().st_size,
+        reverse=True,
+    )
+
     file_metadatas: List[FileMetadata] = []
-    for file_path in folder_path.rglob("*"):
-        if file_path.is_file():
+    with index_progress() as progress:
+        task_id = progress.add_task(
+            "Indexing files",
+            total=max(len(candidates), 1),
+            tensor="",
+        )
+        for file_path in candidates:
             relative_path = file_path.relative_to(folder_path)
-            file_metadatas.append(
-                FileMetadata(
-                    file_name=file_path.name,
-                    file_checksum_sha256=fast_checksum(file_path),
-                    file_relative_path=relative_path
-                )
+            size_label = _format_bytes(file_path.stat().st_size)
+            progress.update(
+                task_id,
+                description=f"Hash {short_label(file_path.name, 28)} ({size_label})",
+                tensor="",
             )
+            last_tensor_update = [0.0]
+
+            def on_tensor(name: str, index: int, total: int, *, fname=file_path.name) -> None:
+                now = time.monotonic()
+                if index != total and now - last_tensor_update[0] < 0.2:
+                    return
+                last_tensor_update[0] = now
+                progress.update(
+                    task_id,
+                    description=f"Hash {short_label(fname, 28)}",
+                    tensor=f"{short_label(name, 38)} ({index}/{total})",
+                )
+
+            file_metadatas.append(
+                build_file_metadata(file_path, relative_path, on_tensor=on_tensor)
+            )
+            progress.advance(task_id)
+
     return FolderIndex(folder_index=file_metadatas)
 
 

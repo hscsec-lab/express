@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator, Optional
 
 from rich.progress import (
     BarColumn,
@@ -17,8 +17,23 @@ from rich.progress import (
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
+from rich.table import Column
 
 from express import console
+
+if TYPE_CHECKING:
+    from express.base.cleanup import CleanupScope
+
+
+def short_label(text: str, max_len: int = 42) -> str:
+    """Truncate long paths/tensor names for fixed-width progress rows."""
+    if max_len < 2:
+        return text[:max_len]
+    if len(text) <= max_len:
+        return text
+    if max_len == 2:
+        return "…" + text[-1]
+    return f"…{text[-(max_len - 1):]}"
 
 
 @contextmanager
@@ -42,6 +57,26 @@ def catalog_progress() -> Progress:
     )
 
 
+def index_progress() -> Progress:
+    """Progress UI for local folder indexing (incl. per-tensor safetensors hashing)."""
+    return Progress(
+        SpinnerColumn(),
+        TextColumn(
+            "[progress.description]{task.description}",
+            table_column=Column(max_width=34, overflow="ellipsis"),
+        ),
+        TextColumn(
+            "[dim]{task.fields[tensor]}[/dim]",
+            table_column=Column(max_width=46, overflow="ellipsis"),
+        ),
+        BarColumn(bar_width=18),
+        MofNCompleteColumn(),
+        console=console,
+        transient=True,
+        expand=False,
+    )
+
+
 class TransferSession:
     """
     Single live progress view for multi-file push/pull.
@@ -49,9 +84,10 @@ class TransferSession:
     Shows overall file completion plus the active file's byte progress.
     """
 
-    def __init__(self, title: str, total_files: int):
+    def __init__(self, title: str, total_files: int, *, cleanup: Optional["CleanupScope"] = None):
         self.title = title
         self.total_files = max(total_files, 0)
+        self.cleanup = cleanup
         self.progress = Progress(
             SpinnerColumn(),
             TextColumn("[bold]{task.description}"),

@@ -152,9 +152,18 @@ class Model:
         # This handles the case of scalar / model, with slightly different logic
         return self._apply_op(other, lambda a, b: b / (a + 1e-12))
 
-    def _load(self, device: Optional[str] = None, **kwargs) -> PreTrainedModel:
+    def _load(
+            self,
+            device: Optional[str] = None,
+            *,
+            inspection: bool = False,
+            **kwargs,
+    ) -> PreTrainedModel:
         """
         Main entry point for loading the model with caching mechanism and automated dispatching.
+
+        When *inspection* is True (``express view``), loads weights onto a single
+        device without ``device_map="auto"`` so tensors are materialized for analysis.
         """
         from transformers import AutoConfig
 
@@ -166,11 +175,21 @@ class Model:
         load_class = self._determine_load_class(config)
         load_params = self._prepare_load_params(config, **kwargs)
 
-        self._model_instance = self._execute_model_loading(
-            load_class,
-            load_params,
-            device
-        )
+        if inspection:
+            from express.base.compute_device import resolve_compute_device
+
+            target = resolve_compute_device(device)
+            self._model_instance = self._execute_model_loading_inspection(
+                load_class,
+                load_params,
+                target,
+            )
+        else:
+            self._model_instance = self._execute_model_loading(
+                load_class,
+                load_params,
+                device,
+            )
 
         return self._model_instance
 
@@ -235,6 +254,24 @@ class Model:
             offload_folder=offload_folder
         ).to(target_device)
 
+    def _execute_model_loading_inspection(
+            self,
+            load_class: type,
+            load_params: dict,
+            target_device: str,
+    ) -> PreTrainedModel:
+        """Load full weights onto one device for ``express view`` (no meta/offload map)."""
+        import torch
+
+        offload_folder = os.getenv("OFFLOAD_FOLDER", "/tmp/.cache")
+        params = dict(load_params)
+        params.setdefault("low_cpu_mem_usage", True)
+        model = load_class.from_pretrained(
+            **params,
+            offload_folder=offload_folder,
+        )
+        return model.to(torch.device(target_device))
+
     def _save(self, instance: PreTrainedModel, suffix: str = "_output") -> "Model":
         """
         Save Model instance to a new temporary directory and return a new Model object pointing to it.
@@ -255,7 +292,13 @@ class Model:
         return self._load()
 
     def write_index_file(self) -> FolderIndex:
-        console.print(f"Writing index file to {self.path}")
+        from express.base.progress import short_label
+
+        console.print(
+            f"Indexing [bold]{short_label(str(self.path), 72)}[/bold] "
+            "(per-tensor index; whole-file hash may differ from HF export — "
+            "`express cmp-safetensors` to compare)…"
+        )
         folder_index: FolderIndex = generate_index(self.path)
         with (self.path / MODEL_INDEX_FILE_NAME).open('w', encoding='utf-8') as f:
             json.dump(
@@ -264,7 +307,8 @@ class Model:
                 ensure_ascii=False,
                 indent=2
             )
-            return folder_index
+        self.folder_index = folder_index
+        return folder_index
 
     def is_index_file_exists(self):
         return (self.path / MODEL_INDEX_FILE_NAME).exists()

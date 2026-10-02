@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "express"
-version = "0.4.0"
+version = "0.5.0"
 description = "Visual Analysis & Distribution Toolkit for Transformers"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,6 +31,7 @@ dependencies = [
     "joblib>=1.5.3",
     "pydantic>=2.12.5",
     "rich>=14.2.0",
+    "safetensors>=0.5.0",
     "simple-file-checksum>=1.3.1",
     "textual>=8.2.4",
     "torch>=2.11.0",
@@ -42,6 +43,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.2",
+    "pytest-cov>=5.0",
+    "pytest-xdist>=3.6",
+    "numpy>=1.26.0",
 ]
 
 [project.urls]
@@ -49,7 +53,7 @@ Repository = "https://gitlab.cyberspike.top/aszl/diamond-shovel/al-1s/hive/expre
 "Merge requests" = "https://gitlab.cyberspike.top/aszl/diamond-shovel/al-1s/hive/express/-/merge_requests"
 
 [project.scripts]
-express = "express.vendor.cli:app"
+express = "express.vendor.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -60,3 +64,28 @@ exclude = ["express.tests*"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
+markers = [
+    "gpu: requires CUDA or GPU-oriented torch workloads",
+    "integration: live S3 integration (use --run-integration)",
+]
+
+[tool.coverage.run]
+source = ["src/express"]
+omit = [
+    "src/express/math/*",
+    "src/express/base/model.py",
+    "src/express/functions/*",
+    "src/express/vendor/cli.py",
+    "src/express/vendor/completion.py",
+    "src/express/base/config.py",
+    "src/express/base/s3.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 100
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
