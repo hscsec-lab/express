@@ -8,17 +8,19 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional
 
+from rich.filesize import decimal
 from rich.progress import (
     BarColumn,
-    DownloadColumn,
     MofNCompleteColumn,
     Progress,
+    ProgressColumn,
     SpinnerColumn,
     TextColumn,
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
 from rich.table import Column
+from rich.text import Text
 
 from express import console
 
@@ -58,6 +60,21 @@ def catalog_progress() -> Progress:
     )
 
 
+class TransferAmountColumn(ProgressColumn):
+    """File-count for the overall row; byte sizes for active transfers."""
+
+    def render(self, task) -> Text:
+        if task.fields.get("unit") == "files":
+            total = int(task.total) if task.total else 0
+            done = int(task.completed)
+            return Text(f"{done}/{total} files")
+        total = int(task.total) if task.total else 0
+        done = int(task.completed)
+        if total:
+            return Text(f"{decimal(done)}/{decimal(total)}")
+        return Text(decimal(done))
+
+
 def index_progress() -> Progress:
     """Progress UI for local folder indexing (incl. per-tensor safetensors hashing)."""
     return Progress(
@@ -94,7 +111,7 @@ class TransferSession:
             TextColumn("[bold]{task.description}"),
             BarColumn(bar_width=28),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            DownloadColumn(),
+            TransferAmountColumn(),
             TransferSpeedColumn(),
             TimeRemainingColumn(),
             console=console,
@@ -103,6 +120,9 @@ class TransferSession:
         self._overall_id = None
         self._current_id = None
         self._files_done = 0
+        self._blobs_done = 0
+        self._blobs_total = 0
+        self._aggregate_label = ""
         self._lock = threading.Lock()
 
     def __enter__(self) -> "TransferSession":
@@ -111,6 +131,7 @@ class TransferSession:
             f"{self.title}",
             total=max(self.total_files, 1),
             completed=0,
+            unit="files",
         )
         return self
 
@@ -128,13 +149,72 @@ class TransferSession:
         with self._lock:
             self._advance_overall()
 
+    def begin_blob_batch(self, label: str, blob_count: int, total_bytes: int) -> None:
+        """One progress row for many blob uploads within a single indexed file."""
+        with self._lock:
+            if self._current_id is not None:
+                self.progress.remove_task(self._current_id)
+            self._aggregate_label = label
+            self._blobs_done = 0
+            self._blobs_total = max(int(blob_count), 1)
+            display = self._blob_batch_description()
+            total = max(int(total_bytes), 1)
+            self._current_id = self.progress.add_task(
+                display,
+                total=total,
+                unit="bytes",
+                blobs_done=0,
+                blobs_total=self._blobs_total,
+            )
+
+    def _blob_batch_description(self) -> str:
+        name = self._aggregate_label if len(self._aggregate_label) <= 28 else f"{self._aggregate_label[:25]}..."
+        return f"{name} · blobs {self._blobs_done}/{self._blobs_total}"
+
+    def _mark_blob_done(self, *, advance_bytes: int = 0) -> None:
+        if self._current_id is None:
+            return
+        self._blobs_done = min(self._blobs_done + 1, self._blobs_total)
+        self.progress.update(
+            self._current_id,
+            advance=max(int(advance_bytes), 0),
+            description=self._blob_batch_description(),
+            blobs_done=self._blobs_done,
+        )
+
+    def on_aggregate_progress(self, bytes_amount: int) -> None:
+        with self._lock:
+            if self._current_id is None:
+                return
+            self.progress.update(self._current_id, advance=bytes_amount)
+
+    def on_aggregate_blob_skip(self, byte_length: int) -> None:
+        with self._lock:
+            self._mark_blob_done(advance_bytes=byte_length)
+
+    def finish_blob_batch(self) -> None:
+        with self._lock:
+            if self._current_id is not None:
+                task = self.progress.tasks[
+                    next(i for i, t in enumerate(self.progress.tasks) if t.id == self._current_id)
+                ]
+                self.progress.update(self._current_id, completed=task.total)
+                self.progress.remove_task(self._current_id)
+                self._current_id = None
+            self._blobs_done = 0
+            self._blobs_total = 0
+
+    def on_blob_uploaded(self) -> None:
+        with self._lock:
+            self._mark_blob_done()
+
     def on_start(self, label: str, total_bytes: int) -> None:
         with self._lock:
             if self._current_id is not None:
                 self.progress.remove_task(self._current_id)
             display = label if len(label) <= 36 else f"{label[:33]}..."
             total = max(int(total_bytes), 1)
-            self._current_id = self.progress.add_task(display, total=total)
+            self._current_id = self.progress.add_task(display, total=total, unit="bytes")
 
     def on_progress(self, bytes_amount: int) -> None:
         with self._lock:

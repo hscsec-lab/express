@@ -43,6 +43,7 @@ def _upload_blob_worker(
         force: bool,
         session: Optional[TransferSession],
         label: str,
+        aggregate_session: Optional[TransferSession],
 ) -> None:
     push_storage_blob(
         remote,
@@ -51,6 +52,7 @@ def _upload_blob_worker(
         force=force,
         session=session,
         label=label,
+        aggregate_session=aggregate_session,
     )
 
 
@@ -87,11 +89,26 @@ def upload_storage_parts(
 
     label = local_file_path.name
     workers = max(1, int(blob_concurrency))
-    if workers == 1 or len(unique_blobs) <= 1:
-        for blob in unique_blobs:
-            _upload_blob_worker(remote, blob, force=force, session=session, label=label)
-    else:
-        with ThreadPoolExecutor(max_workers=min(workers, len(unique_blobs))) as pool:
+    use_aggregate = session is not None and len(unique_blobs) > 1
+    if use_aggregate:
+        total_bytes = sum(blob.payload_length for blob in unique_blobs)
+        session.begin_blob_batch(label, len(unique_blobs), total_bytes)
+    aggregate = session if use_aggregate else None
+
+    try:
+        if workers == 1 or len(unique_blobs) <= 1:
+            for blob in unique_blobs:
+                _upload_blob_worker(
+                    remote,
+                    blob,
+                    force=force,
+                    session=session,
+                    label=label,
+                    aggregate_session=aggregate,
+                )
+        else:
+            max_workers = min(workers, len(unique_blobs))
+            pool = ThreadPoolExecutor(max_workers=max_workers)
             futures = [
                 pool.submit(
                     _upload_blob_worker,
@@ -100,11 +117,23 @@ def upload_storage_parts(
                     force=force,
                     session=session,
                     label=label,
+                    aggregate_session=aggregate,
                 )
                 for blob in unique_blobs
             ]
-            for future in as_completed(futures):
-                future.result()
+            try:
+                for future in as_completed(futures):
+                    future.result()
+            except KeyboardInterrupt:
+                for future in futures:
+                    future.cancel()
+                pool.shutdown(wait=False, cancel_futures=True)
+                raise
+            else:
+                pool.shutdown(wait=True)
+    finally:
+        if use_aggregate and session is not None:
+            session.finish_blob_batch()
 
     if session is not None:
         session.complete_file()
