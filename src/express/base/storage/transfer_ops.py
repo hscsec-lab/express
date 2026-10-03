@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import struct
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +12,8 @@ from express.base.storage.base import StorageBlob
 from express.base.storage.registry import resolve_handler
 from express.base.storage.safetensors import SafetensorsHandler
 from express.base.transfer import push_storage_blob
+
+DEFAULT_BLOB_CONCURRENCY = 5
 
 
 def _blobs_from_manifest_file(path: Path, manifest: dict) -> list[StorageBlob]:
@@ -33,6 +36,24 @@ def _blobs_from_manifest_file(path: Path, manifest: dict) -> list[StorageBlob]:
     return blobs
 
 
+def _upload_blob_worker(
+        remote: Remote,
+        blob: StorageBlob,
+        *,
+        force: bool,
+        session: Optional[TransferSession],
+        label: str,
+) -> None:
+    push_storage_blob(
+        remote,
+        blob,
+        blob.content_hash,
+        force=force,
+        session=session,
+        label=label,
+    )
+
+
 def upload_storage_parts(
         remote: Remote,
         local_file_path: Path,
@@ -40,6 +61,7 @@ def upload_storage_parts(
         *,
         force: bool = False,
         session: Optional[TransferSession] = None,
+        blob_concurrency: int = DEFAULT_BLOB_CONCURRENCY,
 ) -> None:
     handler = resolve_handler(local_file_path)
     manifest = file_metadata.unit_manifest
@@ -55,19 +77,37 @@ def upload_storage_parts(
         result = handler.process(local_file_path)
         blobs = list(result.blobs)
 
+    unique_blobs: list[StorageBlob] = []
     seen: set[str] = set()
     for blob in blobs:
         if blob.content_hash in seen:
             continue
         seen.add(blob.content_hash)
-        push_storage_blob(
-            remote,
-            blob,
-            blob.content_hash,
-            force=force,
-            session=session,
-            label=local_file_path.name,
-        )
+        unique_blobs.append(blob)
+
+    label = local_file_path.name
+    workers = max(1, int(blob_concurrency))
+    if workers == 1 or len(unique_blobs) <= 1:
+        for blob in unique_blobs:
+            _upload_blob_worker(remote, blob, force=force, session=session, label=label)
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(unique_blobs))) as pool:
+            futures = [
+                pool.submit(
+                    _upload_blob_worker,
+                    remote,
+                    blob,
+                    force=force,
+                    session=session,
+                    label=label,
+                )
+                for blob in unique_blobs
+            ]
+            for future in as_completed(futures):
+                future.result()
+
+    if session is not None:
+        session.complete_file()
 
 
 def materialize_local_file(

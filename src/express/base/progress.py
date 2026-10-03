@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional
@@ -102,6 +103,7 @@ class TransferSession:
         self._overall_id = None
         self._current_id = None
         self._files_done = 0
+        self._lock = threading.Lock()
 
     def __enter__(self) -> "TransferSession":
         self.progress.start()
@@ -118,30 +120,39 @@ class TransferSession:
             self._current_id = None
         self.progress.stop()
 
-    def skip(self) -> None:
-        self._advance_overall()
+    def skip(self, *, advance_overall: bool = True) -> None:
+        if advance_overall:
+            self.complete_file()
+
+    def complete_file(self) -> None:
+        with self._lock:
+            self._advance_overall()
 
     def on_start(self, label: str, total_bytes: int) -> None:
-        if self._current_id is not None:
-            self.progress.remove_task(self._current_id)
-        display = label if len(label) <= 36 else f"{label[:33]}..."
-        total = max(int(total_bytes), 1)
-        self._current_id = self.progress.add_task(display, total=total)
+        with self._lock:
+            if self._current_id is not None:
+                self.progress.remove_task(self._current_id)
+            display = label if len(label) <= 36 else f"{label[:33]}..."
+            total = max(int(total_bytes), 1)
+            self._current_id = self.progress.add_task(display, total=total)
 
     def on_progress(self, bytes_amount: int) -> None:
-        if self._current_id is None:
-            return
-        self.progress.update(self._current_id, advance=bytes_amount)
+        with self._lock:
+            if self._current_id is None:
+                return
+            self.progress.update(self._current_id, advance=bytes_amount)
 
-    def on_finish(self) -> None:
-        if self._current_id is not None:
-            task = self.progress.tasks[
-                next(i for i, t in enumerate(self.progress.tasks) if t.id == self._current_id)
-            ]
-            self.progress.update(self._current_id, completed=task.total)
-            self.progress.remove_task(self._current_id)
-            self._current_id = None
-        self._advance_overall()
+    def on_finish(self, *, advance_overall: bool = True) -> None:
+        with self._lock:
+            if self._current_id is not None:
+                task = self.progress.tasks[
+                    next(i for i, t in enumerate(self.progress.tasks) if t.id == self._current_id)
+                ]
+                self.progress.update(self._current_id, completed=task.total)
+                self.progress.remove_task(self._current_id)
+                self._current_id = None
+        if advance_overall:
+            self.complete_file()
 
     def _advance_overall(self) -> None:
         self._files_done += 1

@@ -105,7 +105,16 @@ def cmp_safetensors(
 
 
 @app.command()
-def push(model_path: Path):
+def push(
+        model_path: Path,
+        blob_concurrency: int = typer.Option(
+            5,
+            "--blob-concurrency",
+            "-j",
+            min=1,
+            help="Parallel safetensors tensor blob uploads (default: 5).",
+        ),
+):
     """
     Push a local model to remote storage.
     """
@@ -114,7 +123,7 @@ def push(model_path: Path):
     from express.base.model import Model
 
     model: Model = Model(path=model_path)
-    remote.push(model, Remote())
+    remote.push(model, Remote(), blob_concurrency=blob_concurrency)
 
 
 @app.command()

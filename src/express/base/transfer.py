@@ -52,7 +52,7 @@ def push_storage_blob(
         if session is None:
             console.print(Text.assemble("✓ Skip ", (remote_file_name[:16] + "…", "dim"), ": exists"))
         else:
-            session.skip()
+            session.skip(advance_overall=False)
         return
 
     callback = None
@@ -87,7 +87,7 @@ def push_storage_blob(
         return
 
     if session is not None:
-        session.on_finish()
+        session.on_finish(advance_overall=False)
 
 
 def push_chunk(
@@ -176,16 +176,24 @@ def push_file(
         file_metadata: FileMetadata,
         model_metadata_torrent: str,
         session: Optional[TransferSession] = None,
+        blob_concurrency: int | None = None,
 ) -> None:
     """Uploads a local file to the remote S3 bucket if it doesn't already exist."""
+    from express.base.storage.transfer_ops import DEFAULT_BLOB_CONCURRENCY, upload_storage_parts
+
     local_file_path = model.path / file_metadata.file_relative_path
     if file_metadata.file_name == MODEL_INDEX_FILE_NAME:
         remote_file_name = f"{model_metadata_torrent}.{MODEL_INDEX_FILE_NAME}"
         push_chunk(remote, local_file_path, remote_file_name, session=session)
         return
-    from express.base.storage.transfer_ops import upload_storage_parts
-
-    upload_storage_parts(remote, local_file_path, file_metadata, session=session)
+    workers = DEFAULT_BLOB_CONCURRENCY if blob_concurrency is None else blob_concurrency
+    upload_storage_parts(
+        remote,
+        local_file_path,
+        file_metadata,
+        session=session,
+        blob_concurrency=workers,
+    )
 
 
 def pull_file(

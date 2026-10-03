@@ -256,7 +256,12 @@ def _print_entries(entries: List[RemoteEntry], *, empty_message: str = "No model
             console.print()
 
 
-def push(model: Model, remote: Remote) -> None:
+def push(
+        model: Model,
+        remote: Remote,
+        *,
+        blob_concurrency: int | None = None,
+) -> None:
     """Pushes a model and its indexed files to the remote server."""
     assert model.is_metadata_file_exists(), "The model being pushed is missing metadata."
     model_metadata_torrent: Torrent = get_torrent(model.get_metadata())
@@ -269,7 +274,14 @@ def push(model: Model, remote: Remote) -> None:
     with managed_transfer("Push") as cleanup:
         with TransferSession("Push", total_files=len(folder_index), cleanup=cleanup) as session:
             for file_metadata in folder_index:
-                push_file(model, remote, file_metadata, model_metadata_torrent, session=session)
+                push_file(
+                    model,
+                    remote,
+                    file_metadata,
+                    model_metadata_torrent,
+                    session=session,
+                    blob_concurrency=blob_concurrency,
+                )
 
     if any(fm.storage_unit == "safetensors_v1" for fm in folder_index):
         from express.base.storage.safetensors_equiv import print_whole_file_hash_hint
