@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from io import BufferedReader
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any, Callable, Generator, Optional
 
 from rich.text import Text
 
@@ -46,19 +46,25 @@ def push_storage_blob(
         force: bool = False,
         session: Optional[TransferSession] = None,
         label: str | None = None,
+        decomposed_session: Optional[TransferSession] = None,
+        slot: int | None = None,
 ) -> None:
     remote_file_name = remote_file_name or blob.content_hash
     if is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name) and not force:
-        if session is None:
+        if decomposed_session is not None and slot is not None:
+            decomposed_session.on_slot_skip(slot, blob.payload_length)
+        elif session is None:
             console.print(Text.assemble("✓ Skip ", (remote_file_name[:16] + "…", "dim"), ": exists"))
         else:
-            session.skip()
+            session.skip(advance_overall=False)
         return
 
-    callback = None
+    callback: Callable[[int], None] | None = None
     display = label or remote_file_name[:24]
     total = blob.payload_length
-    if session is not None:
+    if decomposed_session is not None and slot is not None:
+        callback = lambda n, s=slot: decomposed_session.on_slot_progress(s, n)
+    elif session is not None and decomposed_session is None:
         session.on_start(display, total)
         callback = session.on_progress
 
@@ -83,11 +89,21 @@ def push_storage_blob(
             if cleanup is not None:
                 cleanup.clear_remote_key(remote, remote_file_name)
     else:
-        push_chunk_bytes(remote, blob.read_payload(), remote_file_name, force=force, session=session)
+        if decomposed_session is not None and slot is not None:
+            push_chunk_bytes(
+                remote,
+                blob.read_payload(),
+                remote_file_name,
+                force=force,
+                session=None,
+                byte_progress=lambda n, s=slot: decomposed_session.on_slot_progress(s, n),
+            )
+        else:
+            push_chunk_bytes(remote, blob.read_payload(), remote_file_name, force=force, session=session)
         return
 
-    if session is not None:
-        session.on_finish()
+    if session is not None and decomposed_session is None:
+        session.on_finish(advance_overall=False)
 
 
 def push_chunk(
@@ -96,6 +112,7 @@ def push_chunk(
         remote_file_name: str = None,
         force: bool = False,
         session: Optional[TransferSession] = None,
+        byte_progress: Callable[[int], None] | None = None,
 ) -> None:
     """
     Push a chunk file to the remote server. The remote file name defaults to the SHA256
@@ -111,8 +128,10 @@ def push_chunk(
             session.skip()
         return
 
-    callback = None
-    if session is not None:
+    callback: Callable[[int], None] | None = None
+    if byte_progress is not None:
+        callback = byte_progress
+    elif session is not None:
         session.on_start(Path(local_file_path).name, file_size(local_file_path))
         callback = session.on_progress
 
@@ -131,7 +150,7 @@ def push_chunk(
     else:
         if cleanup is not None:
             cleanup.clear_remote_key(remote, remote_file_name)
-    if session is not None:
+    if session is not None and byte_progress is None:
         session.on_finish()
 
 
@@ -142,6 +161,7 @@ def push_chunk_bytes(
         *,
         force: bool = False,
         session: Optional[TransferSession] = None,
+        byte_progress: Callable[[int], None] | None = None,
 ) -> None:
     import tempfile
 
@@ -149,7 +169,14 @@ def push_chunk_bytes(
         tmp.write(payload)
         tmp_path = Path(tmp.name)
     try:
-        push_chunk(remote, tmp_path, remote_file_name, force=force, session=session)
+        push_chunk(
+            remote,
+            tmp_path,
+            remote_file_name,
+            force=force,
+            session=session,
+            byte_progress=byte_progress,
+        )
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -176,16 +203,24 @@ def push_file(
         file_metadata: FileMetadata,
         model_metadata_torrent: str,
         session: Optional[TransferSession] = None,
+        blob_concurrency: int | None = None,
 ) -> None:
     """Uploads a local file to the remote S3 bucket if it doesn't already exist."""
+    from express.base.storage.transfer_ops import DEFAULT_BLOB_CONCURRENCY, upload_storage_parts
+
     local_file_path = model.path / file_metadata.file_relative_path
     if file_metadata.file_name == MODEL_INDEX_FILE_NAME:
         remote_file_name = f"{model_metadata_torrent}.{MODEL_INDEX_FILE_NAME}"
         push_chunk(remote, local_file_path, remote_file_name, session=session)
         return
-    from express.base.storage.transfer_ops import upload_storage_parts
-
-    upload_storage_parts(remote, local_file_path, file_metadata, session=session)
+    workers = DEFAULT_BLOB_CONCURRENCY if blob_concurrency is None else blob_concurrency
+    upload_storage_parts(
+        remote,
+        local_file_path,
+        file_metadata,
+        session=session,
+        blob_concurrency=workers,
+    )
 
 
 def pull_file(

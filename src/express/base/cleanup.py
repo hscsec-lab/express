@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator, TYPE_CHECKING
@@ -83,4 +84,6 @@ def managed_transfer(operation: str) -> Iterator[CleanupScope]:
             f"[yellow]{operation} interrupted[/yellow] (Ctrl-C). "
             "Partial uploads/downloads were cleaned up where possible."
         )
-        raise SystemExit(130) from None
+        # Do not raise SystemExit: non-daemon upload threads may still be running after
+        # parallel blob push and would block process shutdown until S3 calls finish.
+        os._exit(130)

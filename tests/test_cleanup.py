@@ -5,7 +5,18 @@ from unittest.mock import MagicMock
 import pytest
 from botocore.exceptions import ClientError
 
+import express.base.cleanup as cleanup_module
 from express.base.cleanup import CleanupScope, managed_transfer, _try_delete_remote
+
+
+@pytest.fixture(autouse=True)
+def _managed_transfer_exits_via_raise(monkeypatch):
+    """Tests must not terminate the runner via os._exit from managed_transfer."""
+
+    def fake_exit(code: int) -> None:
+        raise SystemExit(code)
+
+    monkeypatch.setattr(cleanup_module.os, "_exit", fake_exit)
 from express.base.progress import TransferSession
 from express.base.remote import push
 from express.base.transfer import pull_file, push_storage_blob
