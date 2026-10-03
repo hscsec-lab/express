@@ -7,6 +7,31 @@ from express.base.progress import TransferSession
 from express.base.transfer import open_remote_file, pull_file, push_chunk
 
 
+def test_push_chunk_with_byte_progress(tmp_path):
+    path = tmp_path / "chunk.bin"
+    path.write_bytes(b"data")
+    remote = MagicMock()
+    remote.s3_bucket = "b"
+    remote.s3_client = MagicMock()
+    remote.s3_client.exceptions.ClientError = ClientError
+    remote.s3_client.head_object.side_effect = ClientError(
+        {"Error": {"Code": "404", "Message": "missing"}}, "HeadObject"
+    )
+    seen = []
+
+    def on_bytes(n: int) -> None:
+        seen.append(n)
+
+    def upload(*_args, **kwargs):
+        callback = kwargs.get("Callback")
+        if callback is not None:
+            callback(len(path.read_bytes()))
+
+    remote.s3_client.upload_file.side_effect = upload
+    push_chunk(remote, path, "key", byte_progress=on_bytes)
+    assert seen == [4]
+
+
 def test_push_chunk_with_session(tmp_path):
     path = tmp_path / "chunk.bin"
     path.write_bytes(b"data")

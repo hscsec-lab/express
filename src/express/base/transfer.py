@@ -46,12 +46,13 @@ def push_storage_blob(
         force: bool = False,
         session: Optional[TransferSession] = None,
         label: str | None = None,
-        aggregate_session: Optional[TransferSession] = None,
+        decomposed_session: Optional[TransferSession] = None,
+        slot: int | None = None,
 ) -> None:
     remote_file_name = remote_file_name or blob.content_hash
     if is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name) and not force:
-        if aggregate_session is not None:
-            aggregate_session.on_aggregate_blob_skip(blob.payload_length)
+        if decomposed_session is not None and slot is not None:
+            decomposed_session.on_slot_skip(slot, blob.payload_length)
         elif session is None:
             console.print(Text.assemble("✓ Skip ", (remote_file_name[:16] + "…", "dim"), ": exists"))
         else:
@@ -61,9 +62,9 @@ def push_storage_blob(
     callback: Callable[[int], None] | None = None
     display = label or remote_file_name[:24]
     total = blob.payload_length
-    if aggregate_session is not None:
-        callback = aggregate_session.on_aggregate_progress
-    elif session is not None:
+    if decomposed_session is not None and slot is not None:
+        callback = lambda n, s=slot: decomposed_session.on_slot_progress(s, n)
+    elif session is not None and decomposed_session is None:
         session.on_start(display, total)
         callback = session.on_progress
 
@@ -88,23 +89,20 @@ def push_storage_blob(
             if cleanup is not None:
                 cleanup.clear_remote_key(remote, remote_file_name)
     else:
-        if aggregate_session is not None:
+        if decomposed_session is not None and slot is not None:
             push_chunk_bytes(
                 remote,
                 blob.read_payload(),
                 remote_file_name,
                 force=force,
                 session=None,
-                byte_progress=aggregate_session.on_aggregate_progress,
+                byte_progress=lambda n, s=slot: decomposed_session.on_slot_progress(s, n),
             )
-            aggregate_session.on_blob_uploaded()
         else:
             push_chunk_bytes(remote, blob.read_payload(), remote_file_name, force=force, session=session)
         return
 
-    if aggregate_session is not None:
-        aggregate_session.on_blob_uploaded()
-    elif session is not None:
+    if session is not None and decomposed_session is None:
         session.on_finish(advance_overall=False)
 
 
