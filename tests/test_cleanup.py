@@ -160,7 +160,9 @@ def test_materialize_safetensors_with_cleanup(tmp_path):
         Path(filename).write_bytes(blobs[key])
 
     remote.s3_client.download_file.side_effect = download
-    remote.s3_client.head_object.return_value = {"ContentLength": len(next(iter(blobs.values())))}
+    remote.s3_client.head_object.side_effect = lambda **kwargs: {
+        "ContentLength": len(blobs[kwargs["Key"]])
+    }
 
     dest = tmp_path / "out.safetensors"
     scope = CleanupScope()
@@ -201,7 +203,11 @@ def test_pull_file_clears_local_tracking(tmp_path):
     remote.s3_bucket = "b"
     remote.s3_client = MagicMock()
     remote.s3_client.head_object.return_value = {"ContentLength": 3}
-    remote.s3_client.download_file.side_effect = lambda *a, **k: dest.write_bytes(b"new")
+
+    def download(bucket, key, filename, Callback=None):
+        Path(filename).write_bytes(b"new")
+
+    remote.s3_client.download_file.side_effect = download
     scope = CleanupScope()
     session = TransferSession("Pull", 1, cleanup=scope)
     session.progress.start()
@@ -209,17 +215,18 @@ def test_pull_file_clears_local_tracking(tmp_path):
     pull_file(remote, Path("k"), dest, None, force=True, session=session)
     session.progress.stop()
     assert scope._partial_locals == set()
+    assert dest.read_bytes() == b"new"
 
 
-def test_pull_interrupt_cleans_partial_file(tmp_path):
+def test_pull_interrupt_leaves_resume_partial(tmp_path):
     dest = tmp_path / "out.bin"
     remote = MagicMock()
     remote.s3_bucket = "b"
     remote.s3_client = MagicMock()
     remote.s3_client.head_object.return_value = {"ContentLength": 100}
 
-    def boom(*_a, **_k):
-        dest.write_bytes(b"partial")
+    def boom(bucket, key, filename, Callback=None):
+        Path(filename).write_bytes(b"partial")
         raise KeyboardInterrupt
 
     remote.s3_client.download_file.side_effect = boom
@@ -231,4 +238,8 @@ def test_pull_interrupt_cleans_partial_file(tmp_path):
         pull_file(remote, Path("key"), dest, None, force=True, session=session)
     session.progress.stop()
     scope.run()
+    # Final dest is cleaned; *.express.partial is kept for resume.
     assert not dest.exists()
+    from express.base.s3_transfer import partial_path_for
+
+    assert partial_path_for(dest).exists()

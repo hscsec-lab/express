@@ -69,9 +69,13 @@ def test_open_remote_file_index_branch(tmp_path):
     remote = MagicMock()
     remote.s3_bucket = "b"
     remote.s3_client = MagicMock()
-    remote.s3_client.head_object.return_value = {"ContentLength": 1}
+    remote.s3_client.head_object.return_value = {"ContentLength": 2}
     local = tmp_path / MODEL_INDEX_FILE_NAME
-    remote.s3_client.download_file.side_effect = lambda *a, **k: local.write_bytes(b"{}")
+
+    def download(bucket, key, filename, Callback=None):
+        Path(filename).write_bytes(b"{}")
+
+    remote.s3_client.download_file.side_effect = download
     with open_remote_file(remote, Path("k"), local, None, force=True) as handle:
         assert handle.read() == b"{}"
 
@@ -80,8 +84,12 @@ def test_open_remote_file(tmp_path):
     remote = MagicMock()
     remote.s3_bucket = "b"
     remote.s3_client = MagicMock()
-    remote.s3_client.head_object.return_value = {"ContentLength": 1}
+    remote.s3_client.head_object.return_value = {"ContentLength": 2}
     local = tmp_path / "remote.json"
-    remote.s3_client.download_file.side_effect = lambda *a, **k: local.write_bytes(b"{}")
+
+    def download(bucket, key, filename, Callback=None):
+        Path(filename).write_bytes(b"{}")
+
+    remote.s3_client.download_file.side_effect = download
     with open_remote_file(remote, Path("k"), local, None, force=True) as handle:
         assert handle.read() == b"{}"

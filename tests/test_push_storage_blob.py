@@ -14,7 +14,7 @@ def test_push_storage_blob_skip_with_session():
     remote.s3_bucket = "b"
     remote.s3_client = MagicMock()
     remote.s3_client.exceptions.ClientError = ClientError
-    remote.s3_client.head_object.return_value = {}
+    remote.s3_client.head_object.return_value = {"ContentLength": 1}
     blob = StorageBlob(content_hash="abc", data=b"x")
     with TransferSession("Push", total_files=1) as session:
         push_storage_blob(remote, blob, "abc", session=session)
@@ -26,7 +26,7 @@ def test_push_storage_blob_skip_existing():
     remote.s3_bucket = "b"
     remote.s3_client = MagicMock()
     remote.s3_client.exceptions.ClientError = ClientError
-    remote.s3_client.head_object.return_value = {}
+    remote.s3_client.head_object.return_value = {"ContentLength": 1}
     blob = StorageBlob(content_hash="abc", data=b"x")
     push_storage_blob(remote, blob, "abc", force=False)
     remote.s3_client.upload_fileobj.assert_not_called()
@@ -39,7 +39,7 @@ def test_push_storage_blob_decomposed_skip_slot():
     remote.s3_bucket = "b"
     remote.s3_client = MagicMock()
     remote.s3_client.exceptions.ClientError = ClientError
-    remote.s3_client.head_object.return_value = {}
+    remote.s3_client.head_object.return_value = {"ContentLength": 1}
     blob = StorageBlob(content_hash="abc", data=b"x", byte_length=1)
     with TransferSession("Push", total_files=1) as session:
         session.begin_decomposed_file("m.safetensors", 1, slot_count=1)

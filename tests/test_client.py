@@ -72,6 +72,8 @@ def test_remote_init(mock_resource, mock_client, _ensure):
     assert remote.s3_bucket == "b"
     mock_client.assert_called_once()
     mock_resource.assert_called_once()
+    assert mock_client.call_args.kwargs.get("config") is not None
+    assert mock_resource.call_args.kwargs.get("config") is not None
 
 
 @patch.dict("os.environ", {}, clear=True)

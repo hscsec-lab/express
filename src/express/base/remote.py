@@ -328,9 +328,13 @@ def pull_index_with_torrent(torrent: Torrent, remote: Remote) -> dict:
     remote_index_path = f"{torrent}.{MODEL_INDEX_FILE_NAME}"
     assert is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_index_path), "Remote index is not exist."
 
-    with tempfile.NamedTemporaryFile(mode='w+', delete=True) as tmp:
-        with open_remote_file(remote, Path(remote_index_path), Path(tmp.name), file_checksum_sha256=None) as pulled_file:
+    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        with open_remote_file(remote, Path(remote_index_path), tmp_path, file_checksum_sha256=None) as pulled_file:
             return json.loads(pulled_file.read())
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def pull_model(torrent: Torrent, remote: Remote, model: Model, force: bool) -> Model:

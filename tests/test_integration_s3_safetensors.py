@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ from safetensors.numpy import save_file
 from express.base.client import Remote
 from express.base.model import Model
 from express.base.remote import pull_model_with_index, push
+from express.base.s3_transfer import download_file_with_resume, partial_path_for, upload_file_with_retries
 from express.base.storage.registry import build_file_metadata
 from express.base.storage.safetensors import SafetensorsHandler
 
@@ -80,3 +82,33 @@ def test_push_pull_and_partial_tensor_update(tiny_model_dir, tmp_path):
         updated_meta.file_checksum_sha256,
         updated_meta.unit_manifest,
     )
+
+
+def test_upload_download_resume_roundtrip(tmp_path):
+    """Upload a blob, then finish a download from a local partial via Range."""
+    _require_s3_env()
+    remote = Remote()
+    payload = b"express-resume-" + os.urandom(256 * 1024)
+    src = tmp_path / "src.bin"
+    src.write_bytes(payload)
+    key = f"express-it-resume-{uuid.uuid4().hex}"
+    try:
+        upload_file_with_retries(
+            remote.s3_client,
+            src,
+            remote.s3_bucket,
+            key,
+            expected_size=len(payload),
+        )
+        dest = tmp_path / "dest.bin"
+        partial_path_for(dest).write_bytes(payload[:4096])
+        download_file_with_resume(
+            remote.s3_client,
+            remote.s3_bucket,
+            key,
+            dest,
+            total_bytes=len(payload),
+        )
+        assert dest.read_bytes() == payload
+    finally:
+        remote.s3_client.delete_object(Bucket=remote.s3_bucket, Key=key)

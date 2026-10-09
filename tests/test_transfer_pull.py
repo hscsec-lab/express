@@ -80,7 +80,22 @@ def test_push_chunk_skip_existing():
     remote.s3_bucket = "b"
     remote.s3_client = MagicMock()
     remote.s3_client.exceptions.ClientError = ClientError
-    remote.s3_client.head_object.return_value = {}
     path = Path(__file__)
+    remote.s3_client.head_object.return_value = {"ContentLength": path.stat().st_size}
     push_chunk(remote, path, "exists", force=False)
+    remote.s3_client.upload_file.assert_not_called()
+
+
+def test_push_chunk_skip_with_session(tmp_path):
+    from express.base.progress import TransferSession
+
+    path = tmp_path / "chunk.bin"
+    path.write_bytes(b"data")
+    remote = MagicMock()
+    remote.s3_bucket = "b"
+    remote.s3_client = MagicMock()
+    remote.s3_client.exceptions.ClientError = ClientError
+    remote.s3_client.head_object.return_value = {"ContentLength": 4}
+    with TransferSession("Push", total_files=1) as session:
+        push_chunk(remote, path, "exists", session=session)
     remote.s3_client.upload_file.assert_not_called()

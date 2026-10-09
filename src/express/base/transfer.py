@@ -6,15 +6,35 @@ from typing import Any, Callable, Generator, Optional
 from rich.text import Text
 
 from express import console
-from express.base.client import is_remote_file_exists, Remote
+from express.base.client import Remote
 from express.base.file import FileMetadata, fast_checksum
 from express.base.model import Model, MODEL_INDEX_FILE_NAME
 from express.base.progress import TransferSession, file_size
+from express.base.s3_transfer import (
+    download_file_with_resume,
+    is_remote_object_complete,
+    upload_file_with_retries,
+    upload_fileobj_with_retries,
+)
 from express.base.storage.base import StorageBlob
 
 
 def _transfer_cleanup(session: Optional[TransferSession]):
     return session.cleanup if session is not None else None
+
+
+def _skip_remote_object(
+        remote: Remote,
+        remote_file_name: str,
+        expected_size: int,
+        *,
+        force: bool,
+) -> bool:
+    if force:
+        return False
+    return is_remote_object_complete(
+        remote.s3_client, remote.s3_bucket, remote_file_name, expected_size
+    )
 
 
 class _FileRangeReader:
@@ -50,7 +70,7 @@ def push_storage_blob(
         slot: int | None = None,
 ) -> None:
     remote_file_name = remote_file_name or blob.content_hash
-    if is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name) and not force:
+    if _skip_remote_object(remote, remote_file_name, blob.payload_length, force=force):
         if decomposed_session is not None and slot is not None:
             decomposed_session.on_slot_skip(slot, blob.payload_length)
         elif session is None:
@@ -73,16 +93,14 @@ def push_storage_blob(
         if cleanup is not None:
             cleanup.track_remote_key(remote, remote_file_name)
         try:
-            reader = _FileRangeReader(blob.source_path, blob.byte_offset, blob.byte_length)
-            try:
-                remote.s3_client.upload_fileobj(
-                    reader,
-                    remote.s3_bucket,
-                    remote_file_name,
-                    Callback=callback,
-                )
-            finally:
-                reader.close()
+            upload_fileobj_with_retries(
+                remote.s3_client,
+                lambda: _FileRangeReader(blob.source_path, blob.byte_offset, blob.byte_length),
+                remote.s3_bucket,
+                remote_file_name,
+                callback=callback,
+                expected_size=blob.byte_length,
+            )
         except BaseException:
             raise
         else:
@@ -121,7 +139,8 @@ def push_chunk(
     if not remote_file_name:
         remote_file_name = fast_checksum(local_file_path)
 
-    if is_remote_file_exists(remote.s3_client, remote.s3_bucket, remote_file_name) and not force:
+    local_size = file_size(local_file_path)
+    if _skip_remote_object(remote, remote_file_name, local_size, force=force):
         if session is None:
             console.print(Text.assemble("✓ Skip ", (remote_file_name, "dim"), ": already exists"))
         else:
@@ -132,18 +151,20 @@ def push_chunk(
     if byte_progress is not None:
         callback = byte_progress
     elif session is not None:
-        session.on_start(Path(local_file_path).name, file_size(local_file_path))
+        session.on_start(Path(local_file_path).name, local_size)
         callback = session.on_progress
 
     cleanup = _transfer_cleanup(session)
     if cleanup is not None:
         cleanup.track_remote_key(remote, remote_file_name)
     try:
-        remote.s3_client.upload_file(
-            str(local_file_path),
+        upload_file_with_retries(
+            remote.s3_client,
+            local_file_path,
             remote.s3_bucket,
             remote_file_name,
-            Callback=callback,
+            callback=callback,
+            expected_size=local_size,
         )
     except BaseException:
         raise
@@ -274,14 +295,17 @@ def pull_file(
         callback = session.on_progress
 
     cleanup = _transfer_cleanup(session)
+    # Final destination only — partials (*.express.partial) are kept for resume.
     if cleanup is not None:
         cleanup.track_local_file(local_file_path)
     try:
-        remote.s3_client.download_file(
+        download_file_with_resume(
+            remote.s3_client,
             remote.s3_bucket,
             str(remote_file_path),
-            str(local_file_path),
-            Callback=callback,
+            local_file_path,
+            callback=callback,
+            total_bytes=total_bytes or None,
         )
     except BaseException:
         raise

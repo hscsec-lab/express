@@ -96,11 +96,15 @@ def test_push_storage_blob_from_file_range(tmp_path):
 
 
 def test_push_and_pull_chunk_bytes(tmp_path):
+    from botocore.exceptions import ClientError
+
     remote = MagicMock()
     remote.s3_bucket = "bucket"
     remote.s3_client = MagicMock()
-    remote.s3_client.exceptions.ClientError = Exception
-    remote.s3_client.head_object.return_value = {}
+    remote.s3_client.exceptions.ClientError = ClientError
+    remote.s3_client.head_object.side_effect = ClientError(
+        {"Error": {"Code": "404", "Message": "missing"}}, "HeadObject"
+    )
     payload = b"hello-chunk"
 
     def capture_upload(local, bucket, key, Callback=None):
@@ -116,6 +120,7 @@ def test_push_and_pull_chunk_bytes(tmp_path):
     def fake_download(bucket, key, filename, Callback=None):
         Path(filename).write_bytes(stored.read_bytes())
 
+    remote.s3_client.head_object.side_effect = None
     remote.s3_client.head_object.return_value = {"ContentLength": len(payload)}
     remote.s3_client.download_file.side_effect = fake_download
     assert pull_chunk_bytes(remote, "hash-key") == payload

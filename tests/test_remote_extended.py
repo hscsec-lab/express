@@ -140,7 +140,8 @@ def test_pull_index_with_torrent(tmp_path):
         __import__("pathlib").Path(filename).write_bytes(json.dumps(payload).encode("utf-8"))
 
     remote.s3_client.download_file.side_effect = download
-    remote.s3_client.head_object.return_value = {"ContentLength": 10}
+    index_bytes = json.dumps(payload).encode("utf-8")
+    remote.s3_client.head_object.return_value = {"ContentLength": len(index_bytes)}
     data = pull_index_with_torrent(Torrent("abc"), remote)
     assert data == payload
 

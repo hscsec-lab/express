@@ -45,7 +45,9 @@ def test_materialize_safetensors_from_remote(tmp_path):
         Path(filename).write_bytes(blobs[key])
 
     remote.s3_client.download_file.side_effect = fake_download
-    remote.s3_client.head_object.return_value = {"ContentLength": len(next(iter(blobs.values())))}
+    remote.s3_client.head_object.side_effect = lambda **kwargs: {
+        "ContentLength": len(blobs[kwargs["Key"]])
+    }
 
     from express.base.storage.safetensors import SafetensorsHandler
 

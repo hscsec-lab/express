@@ -2,6 +2,17 @@ import os
 from typing import List
 
 
+def _s3_client_config():
+    """botocore retry/timeouts for flaky proxies and long transfers."""
+    from botocore.config import Config
+
+    return Config(
+        retries={"max_attempts": 10, "mode": "adaptive"},
+        connect_timeout=60,
+        read_timeout=120,
+    )
+
+
 class Remote:
     """Manages S3 connection credentials and clients."""
     def __init__(self):
@@ -16,17 +27,20 @@ class Remote:
         self.s3_sk = os.getenv("S3_SK")
         self.s3_endpoint = os.getenv("S3_ENDPOINT")
         self.s3_bucket = os.getenv("S3_BUCKET")
+        cfg = _s3_client_config()
         self.s3 = boto3.resource(
             's3',
             aws_access_key_id=self.s3_ak,
             aws_secret_access_key=self.s3_sk,
-            endpoint_url=self.s3_endpoint
+            endpoint_url=self.s3_endpoint,
+            config=cfg,
         )
         self.s3_client = boto3.client(
             's3',
             aws_access_key_id=self.s3_ak,
             aws_secret_access_key=self.s3_sk,
-            endpoint_url=self.s3_endpoint
+            endpoint_url=self.s3_endpoint,
+            config=cfg,
         )
 
 

@@ -95,7 +95,9 @@ def test_materialize_semantic_roundtrip(tmp_path):
         Path(filename).write_bytes(blobs[key])
 
     remote.s3_client.download_file = fake_download
-    remote.s3_client.head_object = lambda **_: {"ContentLength": len(next(iter(blobs.values())))}
+    remote.s3_client.head_object = lambda **kwargs: {
+        "ContentLength": len(blobs[kwargs["Key"]])
+    }
 
     dest = tmp_path / "pulled" / "m.safetensors"
     from express.base.storage.transfer_ops import materialize_local_file

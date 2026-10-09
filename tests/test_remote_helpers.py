@@ -105,7 +105,9 @@ def test_push_and_pull_safetensors_hint(tmp_path, capsys):
         Path(filename).write_bytes(blob_bytes[key])
 
     remote.s3_client.download_file.side_effect = fake_download
-    remote.s3_client.head_object.return_value = {"ContentLength": len(next(iter(blob_bytes.values())))}
+    remote.s3_client.head_object.side_effect = lambda **kwargs: {
+        "ContentLength": len(blob_bytes[kwargs["Key"]])
+    }
     pull_model_with_index(index, remote, out, force=True)
     assert "cmp-safetensors" in capsys.readouterr().out
 
