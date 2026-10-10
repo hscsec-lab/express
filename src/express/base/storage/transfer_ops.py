@@ -5,7 +5,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 from express.base.client import Remote
 from express.base.file import FileMetadata
@@ -237,6 +237,38 @@ def _materialize_plain(
     )
 
 
+def _unique_manifest_parts(parts: list[dict]) -> list[dict]:
+    unique: list[dict] = []
+    seen: set[str] = set()
+    for part in parts:
+        content_hash = part["content_hash"]
+        if content_hash in seen:
+            continue
+        seen.add(content_hash)
+        unique.append(part)
+    return unique
+
+
+def _download_manifest_part(
+        remote: Remote,
+        part: dict,
+        *,
+        byte_progress: Callable[[int], None] | None = None,
+) -> tuple[str, bytes]:
+    from express.base.transfer import pull_chunk_bytes
+
+    content_hash = part["content_hash"]
+    length = part.get("byte_length")
+    known_size = int(length) if length is not None else None
+    payload = pull_chunk_bytes(
+        remote,
+        content_hash,
+        byte_progress=byte_progress,
+        known_size=known_size,
+    )
+    return content_hash, payload
+
+
 def _materialize_safetensors(
         remote: Remote,
         file_metadata: FileMetadata,
@@ -244,6 +276,7 @@ def _materialize_safetensors(
         *,
         force: bool = False,
         session: Optional[TransferSession] = None,
+        blob_concurrency: int = DEFAULT_BLOB_CONCURRENCY,
 ) -> Path:
     handler = SafetensorsHandler()
     manifest = file_metadata.unit_manifest or {}
@@ -253,23 +286,70 @@ def _materialize_safetensors(
                 session.skip()
             return local_file_path
 
+    parts = _unique_manifest_parts(list(manifest.get("parts") or []))
+    workers = max(1, int(blob_concurrency))
+    use_decomposed = session is not None and len(parts) >= 1
+    slot_pool = _UploadSlotPool(session, workers) if use_decomposed and session is not None else None
+    if use_decomposed and session is not None:
+        total_bytes = sum(int(part.get("byte_length") or 0) for part in parts)
+        session.begin_decomposed_file(
+            local_file_path.name,
+            total_bytes,
+            slot_count=min(workers, max(len(parts), 1)),
+        )
+
     blobs: dict[str, bytes] = {}
-    for part in manifest.get("parts", []):
-        content_hash = part["content_hash"]
-        from express.base.transfer import pull_chunk_bytes
+    blobs_lock = threading.Lock()
 
-        blobs[content_hash] = pull_chunk_bytes(remote, content_hash, session=session)
+    def fetch(part: dict) -> None:
+        name = str(part.get("name") or part["content_hash"][:12])
+        length = int(part.get("byte_length") or 0)
+        if slot_pool is not None and session is not None:
+            with slot_pool.occupy(name, length) as slot:
+                content_hash, payload = _download_manifest_part(
+                    remote,
+                    part,
+                    byte_progress=lambda n, s=slot: session.on_slot_progress(s, n),
+                )
+        else:
+            content_hash, payload = _download_manifest_part(remote, part)
+        with blobs_lock:
+            blobs[content_hash] = payload
 
-    cleanup = session.cleanup if session is not None else None
-    if cleanup is not None:
-        cleanup.track_local_file(local_file_path)
     try:
-        handler.restore(manifest, blobs, local_file_path)
-        if not handler.verify_local(local_file_path, file_metadata.file_checksum_sha256, manifest):
-            raise RuntimeError(f"restored safetensors failed verification: {local_file_path}")
-    except BaseException:
-        raise
-    else:
+        if workers == 1 or len(parts) <= 1:
+            for part in parts:
+                fetch(part)
+        else:
+            max_workers = min(workers, len(parts))
+            pool = ThreadPoolExecutor(max_workers=max_workers)
+            futures = [pool.submit(fetch, part) for part in parts]
+            try:
+                for future in as_completed(futures):
+                    future.result()
+            except KeyboardInterrupt:
+                for future in futures:
+                    future.cancel()
+                pool.shutdown(wait=False, cancel_futures=True)
+                raise
+            else:
+                pool.shutdown(wait=True)
+        cleanup = session.cleanup if session is not None else None
         if cleanup is not None:
-            cleanup.clear_local_file(local_file_path)
+            cleanup.track_local_file(local_file_path)
+        try:
+            handler.restore(manifest, blobs, local_file_path)
+            if not handler.verify_local(local_file_path, file_metadata.file_checksum_sha256, manifest):
+                raise RuntimeError(f"restored safetensors failed verification: {local_file_path}")
+        except BaseException:
+            raise
+        else:
+            if cleanup is not None:
+                cleanup.clear_local_file(local_file_path)
+    finally:
+        if use_decomposed and session is not None:
+            session.finish_decomposed_file()
+
+    if session is not None:
+        session.complete_file()
     return local_file_path

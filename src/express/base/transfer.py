@@ -206,13 +206,24 @@ def pull_chunk_bytes(
         remote: Remote,
         remote_file_name: str,
         session: Optional[TransferSession] = None,
+        byte_progress: Callable[[int], None] | None = None,
+        known_size: int | None = None,
 ) -> bytes:
     import tempfile
 
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp_path = Path(tmp.name)
     try:
-        pull_file(remote, Path(remote_file_name), tmp_path, None, force=True, session=session)
+        pull_file(
+            remote,
+            Path(remote_file_name),
+            tmp_path,
+            None,
+            force=True,
+            session=session,
+            byte_progress=byte_progress,
+            known_size=known_size,
+        )
         return tmp_path.read_bytes()
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -251,6 +262,8 @@ def pull_file(
         file_checksum_sha256: str | None,
         force: bool = False,
         session: Optional[TransferSession] = None,
+        byte_progress: Callable[[int], None] | None = None,
+        known_size: int | None = None,
 ) -> Path:
     """Downloads a file from S3, with graceful handling of checksum algorithm transitions."""
 
@@ -283,14 +296,20 @@ def pull_file(
     local_file_path.parent.mkdir(parents=True, exist_ok=True)
 
     total_bytes = 0
-    try:
-        head = remote.s3_client.head_object(Bucket=remote.s3_bucket, Key=str(remote_file_path))
-        total_bytes = int(head.get("ContentLength") or 0)
-    except Exception:
-        total_bytes = 0
+    if known_size is not None:
+        total_bytes = int(known_size)
+    else:
+        try:
+            head = remote.s3_client.head_object(Bucket=remote.s3_bucket, Key=str(remote_file_path))
+            total_bytes = int(head.get("ContentLength") or 0)
+        except Exception:
+            total_bytes = 0
 
-    callback = None
-    if session is not None:
+    callback = byte_progress
+    # byte_progress is used by decomposed tensor pulls; those must not open a
+    # second file row or advance the overall file counter.
+    track_file = byte_progress is None
+    if track_file and session is not None:
         session.on_start(local_file_path.name, total_bytes)
         callback = session.on_progress
 
@@ -312,7 +331,7 @@ def pull_file(
     else:
         if cleanup is not None:
             cleanup.clear_local_file(local_file_path)
-    if session is not None:
+    if track_file and session is not None:
         session.on_finish()
     return local_file_path
 

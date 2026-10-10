@@ -337,10 +337,11 @@ def pull_index_with_torrent(torrent: Torrent, remote: Remote) -> dict:
         tmp_path.unlink(missing_ok=True)
 
 
-def pull_model(torrent: Torrent, remote: Remote, model: Model, force: bool) -> Model:
+def pull_model(torrent: Torrent, remote: Remote, model: Model | Path, force: bool) -> Model:
     """Coordinates downloading a model index and sequentially pulling all its files."""
+    save_path = Path(model) if isinstance(model, (str, Path)) else Path(model.path)
     index = pull_index_with_torrent(torrent, remote)
-    return pull_model_with_index(index, remote, save_path=model.path, force=force)
+    return pull_model_with_index(index, remote, save_path=save_path, force=force)
 
 
 def pull(torrent: Torrent, remote: Remote, force: bool = False) -> Model:
@@ -352,8 +353,9 @@ def pull(torrent: Torrent, remote: Remote, force: bool = False) -> Model:
     if not local_model_path.exists():
         local_model_path.mkdir(parents=True, exist_ok=True)
 
-    model = Model(path=local_model_path)
-    return pull_model(torrent, remote, model, force=force)
+    # Avoid Model() here: constructing Model reindexes the destination tree before
+    # any remote files exist, which prints a useless empty-folder indexing pass.
+    return pull_model(torrent, remote, local_model_path, force=force)
 
 
 def ls(remote: Remote, torrent: bool = False) -> None:

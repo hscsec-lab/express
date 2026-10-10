@@ -161,15 +161,32 @@ def test_get_referenced_chunks_skips_exclude():
 
 @patch("express.base.remote.pull_model_with_index")
 @patch("express.base.remote.pull_index_with_torrent")
-@patch("express.base.remote.Model")
-def test_pull_model_and_pull(mock_model, mock_index, mock_pull_index, tmp_path):
+def test_pull_model_and_pull(mock_index, mock_pull_index, tmp_path):
     mock_index.return_value = {"folder_index": []}
     mock_pull_index.return_value = MagicMock()
-    mock_model.return_value = MagicMock()
     remote = MagicMock()
     meta = _metadata()
     torrent = get_torrent(meta)
-    pull_model(torrent, remote, mock_model.return_value, force=False)
+    model = MagicMock()
+    model.path = tmp_path / "via-model"
+    pull_model(torrent, remote, model, force=False)
+    mock_pull_index.assert_called_with(
+        mock_index.return_value, remote, save_path=model.path, force=False
+    )
+    pull_model(torrent, remote, tmp_path / "via-path", force=True)
+    mock_pull_index.assert_called_with(
+        mock_index.return_value, remote, save_path=tmp_path / "via-path", force=True
+    )
     with patch("express.base.remote.from_torrent", return_value=meta):
         with patch("express.base.remote.local_workdir", return_value=tmp_path):
             pull(torrent, remote, force=False)
+            dest = tmp_path / meta.name
+            assert dest.is_dir()
+            mock_pull_index.assert_called_with(
+                mock_index.return_value, remote, save_path=dest, force=False
+            )
+            # Second pull hits the existing-directory branch.
+            pull(torrent, remote, force=True)
+            mock_pull_index.assert_called_with(
+                mock_index.return_value, remote, save_path=dest, force=True
+            )
