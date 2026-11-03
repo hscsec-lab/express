@@ -1,6 +1,6 @@
 from express.base.file import FolderIndex, FileMetadata, fast_checksum
 from express.base.model import MODEL_INDEX_FILE_NAME
-from express.base.remote import _get_content_keys_from_index, plan_chunk_deletion
+from express.base.remote import _get_content_keys_from_index, plan_chunk_deletion, plan_unreferenced_chunks
 
 
 def test_content_keys_skip_index_file(tmp_path):
@@ -21,6 +21,20 @@ def test_content_keys_skip_index_file(tmp_path):
     keys = _get_content_keys_from_index(index)
     assert fast_checksum(payload) in keys
     assert "index-hash" not in keys
+
+
+def test_plan_unreferenced_chunks_keeps_indexes_and_referenced_objects():
+    objects = [
+        {"Key": "model.express-index.json", "Size": 10},
+        {"Key": "keep", "Size": 100},
+        {"Key": "orphan", "Size": 7},
+    ]
+    orphans = plan_unreferenced_chunks(
+        objects,
+        referenced_keys={"keep"},
+        index_keys={"model.express-index.json"},
+    )
+    assert orphans == [{"Key": "orphan", "Size": 7}]
 
 
 def test_plan_chunk_deletion_keeps_shared_objects():

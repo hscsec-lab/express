@@ -157,6 +157,27 @@ def delete(
 
 
 @app.command()
+def prune(
+        yes: bool = typer.Option(False, "--yes", "-y", help="Delete unreferenced chunks without prompting."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview unreferenced chunks without removing them."),
+):
+    """
+    Delete remote chunks not referenced by any model index.
+
+    Shows the chunk count and total size, then asks for confirmation.
+    """
+    from express.base import remote
+    from express.base.client import Remote
+
+    remote.prune(
+        Remote(),
+        yes=yes,
+        dry_run=dry_run,
+        confirm=lambda message: typer.confirm(message, default=False),
+    )
+
+
+@app.command()
 def du():
     """
     Show total object count and size of the configured bucket.

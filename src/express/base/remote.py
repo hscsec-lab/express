@@ -4,7 +4,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import Callable, List, Set, Tuple
 
 from botocore.exceptions import ClientError
 from rich.text import Text
@@ -81,19 +81,25 @@ def _load_remote_index(remote: Remote, torrent: Torrent, retries: int = 5) -> Fo
     raise RuntimeError(f"Failed to load remote index after {retries} retries: {index_key}") from last_error
 
 
-def _get_referenced_chunks(remote: Remote, exclude_torrent: Torrent | None = None) -> Set[str]:
+def _scan_index_references(
+        remote: Remote,
+        exclude_torrent: Torrent | None = None,
+        *,
+        abort_reason: str = "delete",
+) -> Tuple[Set[str], Set[str]]:
     """
-    Collect content chunk keys still referenced by other remote model indexes.
+    Return (index object keys, content keys referenced by those indexes).
 
-    Aborts if any other index cannot be loaded, so shared chunks are never deleted
-    based on an incomplete reference scan.
+    Aborts if any index cannot be loaded, so chunks are never deleted from a
+    partial reference scan. ``exclude_torrent`` omits that model's content keys
+    but still reports its index object.
     """
     referenced: Set[str] = set()
-    with busy_status("Checking shared chunks..."):
-        index_keys = search_extension(remote, MODEL_INDEX_FILE_NAME)
+    with busy_status("Scanning model indexes..."):
+        index_keys = set(search_extension(remote, MODEL_INDEX_FILE_NAME))
 
     if not index_keys:
-        return referenced
+        return index_keys, referenced
 
     with catalog_progress() as progress:
         task_id = progress.add_task("Scanning references", total=len(index_keys))
@@ -106,11 +112,29 @@ def _get_referenced_chunks(remote: Remote, exclude_torrent: Torrent | None = Non
                 index = _load_remote_index(remote, torrent)
             except Exception as exc:
                 raise RuntimeError(
-                    f"Aborting delete: cannot verify references from index {index_key}: {exc}"
+                    f"Aborting {abort_reason}: cannot verify references from index {index_key}: {exc}"
                 ) from exc
             referenced |= _get_content_keys_from_index(index)
             progress.advance(task_id)
+    return index_keys, referenced
+
+
+def _get_referenced_chunks(remote: Remote, exclude_torrent: Torrent | None = None) -> Set[str]:
+    """Content chunk keys still referenced by remote model indexes."""
+    _, referenced = _scan_index_references(remote, exclude_torrent, abort_reason="delete")
     return referenced
+
+
+def plan_unreferenced_chunks(
+        objects: List[dict],
+        referenced_keys: Set[str],
+        index_keys: Set[str],
+) -> List[dict]:
+    """Bucket objects that are neither a model index nor referenced by one."""
+    return [
+        obj for obj in objects
+        if obj["Key"] not in index_keys and obj["Key"] not in referenced_keys
+    ]
 
 
 def bucket_stats(remote: Remote) -> Tuple[int, int]:
@@ -187,6 +211,66 @@ def delete(torrent: Torrent, remote: Remote, yes: bool = False, dry_run: bool = 
                 " shared chunks still referenced by other models.",
             )
         )
+
+
+def prune(
+        remote: Remote,
+        *,
+        yes: bool = False,
+        dry_run: bool = False,
+        confirm: Callable[[str], bool] | None = None,
+) -> None:
+    """
+    Delete chunks that no remote model index references.
+
+    Prints how many chunks would be removed and their total size. Deletes only
+    after ``yes`` or a true result from ``confirm``.
+    """
+    index_keys, referenced_keys = _scan_index_references(remote, abort_reason="prune")
+    objects = list_objects(remote)
+    suffix = f".{MODEL_INDEX_FILE_NAME}"
+    listed_index_keys = {obj["Key"] for obj in objects if obj["Key"].endswith(suffix)}
+    unscanned = listed_index_keys - index_keys
+    if unscanned:
+        listed = ", ".join(sorted(unscanned))
+        raise RuntimeError(
+            f"Aborting prune: bucket listing has model indexes that were not scanned: {listed}"
+        )
+
+    orphans = plan_unreferenced_chunks(objects, referenced_keys, index_keys)
+    total_bytes = sum(obj.get("Size", 0) for obj in orphans)
+    console.print(f"Indexes:             {len(index_keys)}")
+    console.print(f"Bucket objects:      {len(objects)}")
+    console.print(f"Referenced chunks:   {len(referenced_keys)}")
+    console.print(f"Unreferenced chunks: {len(orphans)}")
+    console.print(f"Size:                {_format_bytes(total_bytes)} ({total_bytes} bytes)")
+
+    if not orphans:
+        console.print("No unreferenced chunks.")
+        return
+
+    if dry_run:
+        console.print("Dry run: no objects deleted.")
+        return
+
+    prompt = f"Delete {len(orphans)} unreferenced chunks ({_format_bytes(total_bytes)}, {total_bytes} bytes)?"
+    if not yes:
+        if confirm is None or not confirm(prompt):
+            console.print("Aborted. No objects deleted.")
+            return
+
+    delete_keys = [obj["Key"] for obj in orphans]
+    delete_objects(remote, delete_keys)
+    console.print(
+        Text.assemble(
+            "✓ Deleted ",
+            (str(len(delete_keys)), "bold"),
+            " objects, freed ",
+            (_format_bytes(total_bytes), "bold green"),
+            f" ({total_bytes} bytes).",
+        )
+    )
+
 
 def _list(remote: Remote, torrent: bool = False) -> List[Metadata] | List[Torrent]:  # pragma: no cover
     """Retrieves a list of available remote models or their torrents."""
